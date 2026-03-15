@@ -23,7 +23,7 @@ let args f =
   else
     raise (Arg.Bad (f^": No such file"))
 
-let dump_nodes : out_channel -> (string * Json.json) list -> unit
+let dump_nodes : out_channel -> (string * Json.t) list -> unit
 = fun chan l ->
   List.iter (fun (node, attr) ->
       match attr with
@@ -38,7 +38,7 @@ let dump_nodes : out_channel -> (string * Json.json) list -> unit
       | _ -> raise (Failure "error")) l;
   fprintf chan "}\n"
 
-let dump_edges : out_channel -> Json.json list -> unit
+let dump_edges : out_channel -> Json.t list -> unit
 = fun chan l ->
   List.iter (fun edge ->
       match edge with
@@ -48,7 +48,7 @@ let dump_edges : out_channel -> Json.json list -> unit
     ) l
 
 
-let dump_dug : out_channel -> string -> (string * Json.json) list
+let dump_dug : out_channel -> string -> (string * Json.t) list
   -> (string * string, string) BatMap.t -> unit
 = fun chan pid l dug ->
   List.iter (fun (src, _) ->
@@ -60,7 +60,7 @@ let dump_dug : out_channel -> string -> (string * Json.json) list
 (*        fprintf chan "%s -> %s [tooltip=\"%s\" color=red]\n" src dst label*)
       with _ -> ()) l) l
 
-let dump_cfgs : Json.json -> unit
+let dump_cfgs : Json.t -> unit
 = fun json ->
   match json with
     `Assoc l ->
@@ -81,9 +81,9 @@ let dump_cfgs : Json.json -> unit
         let _ = Unix.wait () in
           ()
         ) l
-  | _ -> raise (Failure "Invalid json format")
+  | _ -> raise (Failure "Invalid Json.t format")
 
-let dump_cfgs_with_dug : Json.json -> (string * string, string) BatMap.t -> unit
+let dump_cfgs_with_dug : Json.t -> (string * string, string) BatMap.t -> unit
 = fun json dug ->
   match json with
     `Assoc l ->
@@ -105,10 +105,10 @@ let dump_cfgs_with_dug : Json.json -> (string * string, string) BatMap.t -> unit
         let _ = Unix.wait () in
           ()
         ) l
-  | _ -> raise (Failure "Invalid json format")
+  | _ -> raise (Failure "Invalid Json.t format")
 
 
-let dump_callgraph : Json.json -> unit
+let dump_callgraph : Json.t -> unit
 = fun json ->
   let index = "callgraph.dot" in
   let chan = open_out index in
@@ -129,8 +129,8 @@ let dump_callgraph : Json.json -> unit
               `List [`String v1; `String v2] -> fprintf chan "%s -> %s\n" v1 v2
             | _ -> raise (Failure "error")) edges;
           fprintf chan "}\n"
-       | _ -> raise (Failure "Invalid json format"))
-  | _ -> raise (Failure "Invalid json format"));
+       | _ -> raise (Failure "Invalid Json.t format"))
+  | _ -> raise (Failure "Invalid Json.t format"));
   close_out chan;
   let _ = Unix.create_process "dot" [|"dot"; "-Tsvg"; "-ocallgraph.svg"; index|] Unix.stdin Unix.stdout Unix.stderr in
   let _ = Unix.wait () in
@@ -149,7 +149,7 @@ let create_index : unit -> unit
   fprintf chan "</html>\n";
   close_out chan
 
-let gen_dug : Json.json -> (string * string, string) BatMap.t
+let gen_dug : Json.t -> (string * string, string) BatMap.t
 = fun json ->
   match json with
     `Assoc dug ->
@@ -164,7 +164,7 @@ let gen_dug : Json.json -> (string * string, string) BatMap.t
       | _ -> raise (Failure "error"))
    | _ -> raise (Failure "error")
 
-let dump : Json.json -> unit
+let dump : Json.t -> unit
 = fun json ->
   let dir = !file^".vis" in
   (try Unix.mkdir dir 0o755 with _ -> ());

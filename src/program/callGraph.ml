@@ -61,7 +61,7 @@ let is_rec : t -> InterCfg.pid -> bool = fun callgraph pid ->
     List.mem pid trans
   with _ -> true (* conservative answer for exceptional cases (e.g., unreachable functions) *)
 
-let to_json : t -> json
+let to_json : t -> Yojson.Safe.t
 = fun g ->
   let nodes = `List (G.fold_vertex (fun v nodes ->
             (`String (Proc.to_string v))::nodes) g.graph [])

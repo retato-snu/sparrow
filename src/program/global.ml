@@ -84,7 +84,7 @@ let get_leaf_procs : t -> PowProc.t
         then PowProc.add fid
         else id) pids PowProc.bot
 
-let to_json : t -> json
+let to_json : t -> Yojson.Safe.t
 = fun g ->
   `Assoc
       [ ("callgraph", CallGraph.to_json g.callgraph);

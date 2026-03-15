@@ -48,7 +48,7 @@ sig
 (** {2 Print } *)
 
   val to_dot            : t -> string
-  val to_json           : t -> Yojson.Safe.json
+  val to_json           : t -> Yojson.Safe.t
 end
 
 module Make (Dom : InstrumentedMem.S) =
@@ -154,7 +154,7 @@ struct
     ) dug ""
     ^ "}"
 
-  let to_json : t -> json
+  let to_json : t -> Yojson.Safe.t
   = fun g ->
     let nodes = `List (fold_node (fun v nodes ->
                   (`String (BasicDom.Node.to_string v))::nodes) g [])

@@ -134,7 +134,7 @@ module Scc = Graph.Components.Make(G)
 module GDom = struct
   module V = Node
   type t = G.t
-  let empty = G.empty
+  let empty () = G.empty
   let fromG g = g
   let pred = G.pred
   let succ = G.succ
@@ -142,8 +142,8 @@ module GDom = struct
   let iter_vertex = G.iter_vertex
   let iter_succ = G.iter_succ
   let nb_vertex = G.nb_vertex
-  let add_edge g a b = ()
-  let create : ?size:int -> unit -> t = fun ?size:int () -> empty
+  let add_edge g a b = G.add_edge g a b
+  let create : ?size:int -> unit -> t = fun ?size:int () -> G.empty
 end
 
 module Dom = Graph.Dominator.Make_graph (GDom)
@@ -974,7 +974,7 @@ let print_dom_tree dom_tree =
 
 module Json = Yojson.Safe
 
-let to_json : t -> Json.json
+let to_json : t -> Json.t
 = fun g ->
   let nodes = `Assoc (G.fold_vertex (fun v nodes ->
               (Node.to_string v,

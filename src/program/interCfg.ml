@@ -172,7 +172,7 @@ let remove_node : node -> t -> t
 let print : out_channel -> t -> unit
 =fun chan g -> BatMap.iter (fun pid cfg -> IntraCfg.print_dot chan cfg) g.cfgs
 
-let to_json : t -> json
+let to_json : t -> Yojson.Safe.t
 = fun g ->
   `Assoc (
     BatMap.foldi (fun pid cfg json ->

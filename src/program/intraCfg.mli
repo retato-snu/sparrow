@@ -104,4 +104,4 @@ val parent_of_dom_tree : node -> t -> node option
 (** {2 Print } *)
 
 val print_dot : out_channel -> t -> unit
-val to_json : t -> Yojson.Safe.json
+val to_json : t -> Yojson.Safe.t
