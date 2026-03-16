@@ -6,23 +6,23 @@ This document details the patches applied to the Sparrow codebase and its CIL de
 
 OCaml 4.02+ introduced `safe-string` (immutable strings by default), which became mandatory in later versions. The following files in CIL were modified to replace mutable string operations with the `Bytes` module.
 
-### [cil/src/formatlex.mll](../cil_src/src/formatlex.mll)
+### [cil/src/formatlex.mll](../cli/src/formatlex.mll)
 - **Change**: Replaced `String.set` with `Bytes.set` in the lexer action.
 - **Reason**: The internal buffer for formatting strings was being mutated, which is no longer allowed for `string` types.
 
-### [cil/src/frontc/clexer.mll](../cil_src/src/frontc/clexer.mll)
+### [cil/src/frontc/clexer.mll](../cli/src/frontc/clexer.mll)
 - **Change**: Converted intermediate string buffers to `Bytes`.
 - **Reason**: The lexer used `String.make` and `String.set` to build wide-string literals. This was updated to use `Bytes` and finally `Bytes.to_string`.
 
-### [cil/src/cil.ml](../cil_src/src/cil.ml)
+### [cil/src/cil.ml](../cli/src/cil.ml)
 - **Change**: Replaced `String.copy` and `String.set` in `makeValidSymbolName`.
 - **Reason**: CIL modifies symbols to ensure they are valid C identifiers. This now uses `Bytes.of_string` and `Bytes.to_string`.
 
-### [cil/src/ocamlutil/pretty.ml](../cil_src/src/ocamlutil/pretty.ml)
+### [cil/src/ocamlutil/pretty.ml](../cli/src/ocamlutil/pretty.ml)
 - **Change**: Replaced `String.set` and formatting operations with `Bytes`.
 - **Reason**: The pretty-printing engine mutated strings to manage indentation and alignment.
 
-### [cil/src/ocamlutil/errormsg.ml](../cil_src/src/ocamlutil/errormsg.ml)
+### [cil/src/ocamlutil/errormsg.ml](../cli/src/ocamlutil/errormsg.ml)
 - **Change**: Replaced `String.set` in `rem_backslashes`.
 - **Reason**: Internal string cleaning operations were updated for immutability.
 

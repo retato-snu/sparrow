@@ -5,4 +5,15 @@
 (package
  (name sparrow)
  (synopsis "Static analyzer for C")
- (description "Sparrow is a state-of-the-art static analyzer that aims to verify the absence of fatal bugs in C source."))
+ (description "Sparrow is a state-of-the-art static analyzer that aims to verify the absence of fatal bugs in C source.")
+ (depends
+  (ocaml (>= 4.04.0))
+  (dune (>= 2.1))
+  batteries
+  ocamlgraph
+  apron
+  yojson
+  lymp
+  ppx_compare
+  ppx_deriving
+  cil))
