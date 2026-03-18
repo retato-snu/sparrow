@@ -62,12 +62,12 @@ def is_harmless(clf, vec):
 
 
 def store(clf, name):
-    with open(name, 'w') as f:
+    with open(name, 'wb') as f:
         pickle.dump(clf, f)
 
 
 def load(name):
-    with open(name, 'r') as f:
+    with open(name, 'rb') as f:
         clf = pickle.load(f)
     return clf
 

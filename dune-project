@@ -13,7 +13,7 @@
   ocamlgraph
   apron
   yojson
-  lymp
+  pyml
   ppx_compare
   ppx_deriving
   cil))

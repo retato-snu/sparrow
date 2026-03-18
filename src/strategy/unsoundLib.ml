@@ -357,17 +357,20 @@ let get_harmless_libs : Global.t -> lib BatSet.t
     let data = extract_feature global in
     let sparrow_bin_path = Unix.getenv "SPARROW_BIN_PATH" in
     let sparrow_data_path = Unix.getenv "SPARROW_DATA_PATH" in
-    let py = Lymp.init ~exec:"python2" sparrow_bin_path in
-    let py_module = Lymp.get_module py "harmless_unsoundness" in
-    let classifier = Lymp.Pyref (Lymp.get_ref py_module "load" [Lymp.Pystr (sparrow_data_path ^ "/harmless_lib_clf")]) in
+    Py.initialize ();
+    let sys = Py.import "sys" in
+    let _ = Py.Module.get sys "path" |> (fun p -> Py.Object.call_method p "append" [| Py.String.of_string sparrow_bin_path |]) in
+    let py_module = Py.import "harmless_unsoundness" in
+    let load = Py.Module.get py_module "load" in
+    let classifier = Py.Callable.to_function load [| Py.String.of_string (sparrow_data_path ^ "/harmless_lib_clf") |] in
+    let is_harmless = Py.Module.get py_module "is_harmless" in
     let set = BatMap.foldi (fun l fvec loops ->
         let vec = feature_vector_of fvec in
-        let vec = Lymp.Pylist (List.map (fun x -> Lymp.Pyfloat x) vec) in
-        let b = Lymp.get_bool py_module "is_harmless" [classifier; vec] in
+        let py_vec = Py.List.of_list (List.map Py.Float.of_float vec) in
+        let b = Py.Bool.to_bool (Py.Callable.to_function is_harmless [| classifier; py_vec |]) in
         if b then BatSet.add l loops else loops
         ) data BatSet.empty
     in
-    Lymp.close py;
     set
 
 let collect : Global.t -> lib BatSet.t

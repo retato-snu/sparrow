@@ -21,7 +21,7 @@ Quick list of OCaml dependencies:
 -   [Ocamlgraph][] >= 1.8.7
 -   [Apron][] >= 0.9.10
 -   [Yojson][] >= 1.2.3
--   [Lymp][] >= 0.1.3
+-   [Pyml][] >= 1.5.0
 -   [Ppx_compare][]
 -   [Ppx_deriving][]
 

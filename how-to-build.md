@@ -25,11 +25,10 @@ eval $(opam env)
 Install the required OCaml packages. Note that `cil` is handled as a submodule, so we only install other external libraries:
 
 ```bash
-opam install dune batteries ocamlgraph apron yojson lymp ppx_compare ppx_deriving
+opam install dune batteries ocamlgraph apron yojson pyml ppx_compare ppx_deriving
 ```
 
-> [!NOTE]
-> If `apron` or `lymp` fail to install, ensure that their system dependencies (`gmp`, `python`) are correctly installed and visible to opam.
+> If `apron` or `pyml` fail to install, ensure that their system dependencies (`gmp`, `python`) are correctly installed and visible to opam.
 
 ## 4. Submodule Initialization
 
