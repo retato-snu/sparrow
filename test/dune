@@ -1,7 +1,7 @@
 (executable
  (name test)
- (libraries sparrow_lib))
+ (libraries sparrow_lib unix str))
 
 (rule
  (alias runtest)
- (action (run ./test.exe)))
+ (action (run ./test.exe %{exe:../src/main.exe})))

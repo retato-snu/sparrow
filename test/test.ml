@@ -8,7 +8,7 @@
 (* See the LICENSE file for details.                                   *)
 (*                                                                     *)
 (***********************************************************************)
-let analyzer = "../bin/sparrow"
+let analyzer = if Array.length Sys.argv > 1 then Sys.argv.(1) else "sparrow"
 let default_opt = "-verbose 0"
 
 type test_suite = {
