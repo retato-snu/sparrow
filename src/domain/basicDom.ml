@@ -86,10 +86,10 @@ struct
       let c = compare l1 l2 in
       if c = 0 then
         let c = String.compare f1 f2 in
-        if c = 0 then Pervasives.compare (Cil.typeSig t1) (Cil.typeSig t2)
+        if c = 0 then Stdlib.compare (Cil.typeSig t1) (Cil.typeSig t2)
         else c
       else c
-    | _, _ -> Pervasives.compare (tag_of_t x) (tag_of_t y)
+    | _, _ -> Stdlib.compare (tag_of_t x) (tag_of_t y)
   and tag_of_t = function GVar _ -> 0 | LVar _ -> 1 | Allocsite _ -> 2 | Field _ -> 3
 
   let typ = function GVar (_, t) | LVar (_, _, t) | Field (_, _, t) -> Some t | _ -> None

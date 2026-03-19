@@ -61,7 +61,7 @@ let int_arr = AllocConst
 let tainted_arr = AllocBuf
 
 
-module ApiMap = Map.Make (struct type t = string let compare = Pervasives.compare end)
+module ApiMap = Map.Make (struct type t = string let compare = Stdlib.compare end)
 
 let api_map =
 (* <cstring> ( <string.h> ) *)
