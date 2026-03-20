@@ -77,8 +77,8 @@ val l_shift : t -> t -> t
 
 (** {2 Casting } *)
 
-val cast : Cil.typ -> Cil.typ -> t -> t
+val cast : Sparrow_cil.typ -> Sparrow_cil.typ -> t -> t
 
 (** {2 Pruning } *)
 
-val prune : Cil.binop -> t -> t -> t
+val prune : Sparrow_cil.binop -> t -> t -> t

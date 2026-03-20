@@ -8,7 +8,7 @@
 (* See the LICENSE file for details.                                   *)
 (*                                                                     *)
 (***********************************************************************)
-open Cil
+open Sparrow_cil
 open Vocab
 open AbsSem
 open ItvDom
@@ -65,16 +65,16 @@ let itv_to_interval i =
 let octloc_to_texpr : OctLoc.t -> Texpr1.expr
 = fun l -> Texpr1.Var (Apron.Var.of_string (OctLoc.to_string l))
 
-let const_to_texpr : Cil.constant -> Texpr1.expr = function
-  | Cil.CInt64 (i, _, _) -> Texpr1.Cst (Coeff.s_of_int (Int64.to_int i))
-  | Cil.CStr s -> invalid_arg ("octSem.ml: const_to_texpr string "^s)
-  | Cil.CWStr s -> invalid_arg "octSem.ml: const_to_texpr wide string"
-  | Cil.CChr c -> Texpr1.Cst (Coeff.s_of_int (int_of_char c))
-  | Cil.CReal (f, _, _) -> Texpr1.Cst (Coeff.s_of_int (int_of_float (ceil f)))
+let const_to_texpr : Sparrow_cil.constant -> Texpr1.expr = function
+  | Sparrow_cil.CInt (i, _, _) -> Texpr1.Cst (Coeff.s_of_int (Sparrow_cil.Cilint.to_int i))
+  | Sparrow_cil.CStr (s, _) -> invalid_arg ("octSem.ml: const_to_texpr string "^s)
+  | Sparrow_cil.CWStr (s, _) -> invalid_arg "octSem.ml: const_to_texpr wide string"
+  | Sparrow_cil.CChr c -> Texpr1.Cst (Coeff.s_of_int (int_of_char c))
+  | Sparrow_cil.CReal (f, _, _) -> Texpr1.Cst (Coeff.s_of_int (int_of_float (ceil f)))
   (* BatEnum is not evaluated correctly in our analysis. *)
-  | Cil.CEnum _ -> Texpr1.Cst (Coeff.Interval Interval.top)
+  | Sparrow_cil.CEnum _ -> Texpr1.Cst (Coeff.Interval Interval.top)
 
-let lval_to_texpr : Proc.t -> PackConf.t -> Pack.t -> Cil.lval -> ItvDom.Mem.t -> Mem.t -> Texpr1.expr list
+let lval_to_texpr : Proc.t -> PackConf.t -> Pack.t -> Sparrow_cil.lval -> ItvDom.Mem.t -> Mem.t -> Texpr1.expr list
 = fun pid packconf pack lv premem mem ->
   let lvset = ItvSem.eval_lv pid lv premem in
   let oct = lookup pack mem in
@@ -88,35 +88,35 @@ let lval_to_texpr : Proc.t -> PackConf.t -> Pack.t -> Cil.lval -> ItvDom.Mem.t -
         (Texpr1.Cst (Coeff.Interval (Octagon.itv_of_var x rv_oct |> itv_to_interval)))::el
       else el) lvset []
 
-(* XXX : Cil.bitsSizeOf often fails: just return top for the moment
+(* XXX : Sparrow_cil.bitsSizeOf often fails: just return top for the moment
  * Adhoc solution: To avoid this failure, translate original C sources
  * into "CIL" (using -il option) and analyze the CIL program. *)
-let sizeof_to_texpr : Cil.typ -> Texpr1.expr
+let sizeof_to_texpr : Sparrow_cil.typ -> Texpr1.expr
 =fun typ ->
-  try Texpr1.Cst (Coeff.s_of_int ((Cil.bitsSizeOf typ) / 8))
+  try Texpr1.Cst (Coeff.s_of_int ((Sparrow_cil.bitsSizeOf typ) / 8))
   with _ ->
-    prerr_endline ("warn: Cil.bitsSizeOf (" ^ CilHelper.s_type typ ^ ")");
+    prerr_endline ("warn: Sparrow_cil.bitsSizeOf (" ^ CilHelper.s_type typ ^ ")");
     Texpr1.Cst (Coeff.Interval Interval.top)
 
-let rec exp_to_texpr : Proc.t -> PackConf.t -> Pack.t -> Cil.exp -> ItvDom.Mem.t -> Mem.t -> Texpr1.expr list
+let rec exp_to_texpr : Proc.t -> PackConf.t -> Pack.t -> Sparrow_cil.exp -> ItvDom.Mem.t -> Mem.t -> Texpr1.expr list
 = fun pid packconf pack e ptrmem mem ->
   match e with
-    Cil.Const c -> [const_to_texpr c]
-  | Cil.Lval l -> lval_to_texpr pid packconf pack l ptrmem mem
-  | Cil.SizeOf t -> [sizeof_to_texpr t]
-  | Cil.SizeOfE e -> [sizeof_to_texpr (Cil.typeOf e)]
-  | Cil.SizeOfStr s -> [Texpr1.Cst (Coeff.s_of_int (String.length s + 1))]
-  | Cil.AlignOfE _ -> [Texpr1.Cst (Coeff.Interval Interval.top)]
-  | Cil.CastE (_, e) -> exp_to_texpr pid packconf pack e ptrmem mem
-  | Cil.UnOp (uop, e, _) -> uop_to_texpr pid packconf pack uop e ptrmem mem
-  | Cil.BinOp (bop, e1, e2, _) -> binop_to_texpr pid packconf pack bop e1 e2 ptrmem mem
+    Sparrow_cil.Const c -> [const_to_texpr c]
+  | Sparrow_cil.Lval l -> lval_to_texpr pid packconf pack l ptrmem mem
+  | Sparrow_cil.SizeOf t -> [sizeof_to_texpr t]
+  | Sparrow_cil.SizeOfE e -> [sizeof_to_texpr (Sparrow_cil.typeOf e)]
+  | Sparrow_cil.SizeOfStr s -> [Texpr1.Cst (Coeff.s_of_int (String.length s + 1))]
+  | Sparrow_cil.AlignOfE _ -> [Texpr1.Cst (Coeff.Interval Interval.top)]
+  | Sparrow_cil.CastE (_, _, e) -> exp_to_texpr pid packconf pack e ptrmem mem
+  | Sparrow_cil.UnOp (uop, e, _) -> uop_to_texpr pid packconf pack uop e ptrmem mem
+  | Sparrow_cil.BinOp (bop, e1, e2, _) -> binop_to_texpr pid packconf pack bop e1 e2 ptrmem mem
   | _ -> []
 
 and uop_to_texpr pid packconf pack uop e ptrmem mem =
   let e_list = exp_to_texpr pid packconf pack e ptrmem mem in
   match uop with
-    Cil.Neg -> List.map (fun x -> Texpr1.Unop (Texpr1.Neg, x, Texpr1.Int, Texpr1.Near)) e_list
-  | Cil.BNot | Cil.LNot -> List.map (fun _ -> Texpr1.Cst (Coeff.Interval Interval.top)) e_list
+    Sparrow_cil.Neg -> List.map (fun x -> Texpr1.Unop (Texpr1.Neg, x, Texpr1.Int, Texpr1.Near)) e_list
+  | Sparrow_cil.BNot | Sparrow_cil.LNot -> List.map (fun _ -> Texpr1.Cst (Coeff.Interval Interval.top)) e_list
 
 and binop_to_texpr pid packconf pack bop e1 e2 ptrmem mem =
   let e1_list = exp_to_texpr pid packconf pack e1 ptrmem mem in
@@ -124,48 +124,48 @@ and binop_to_texpr pid packconf pack bop e1 e2 ptrmem mem =
   List.fold_left (fun l x ->
     List.fold_left (fun l y ->
       match bop with
-        Cil.PlusA | Cil.MinusA | Cil.Mult | Cil.Div ->
+        Sparrow_cil.PlusA | Sparrow_cil.MinusA | Sparrow_cil.Mult | Sparrow_cil.Div ->
           (Texpr1.Binop (bop_to_texpr bop, x, y, Texpr1.Int, Texpr1.Near))::l
-      | Cil.BAnd | Cil.BXor | Cil.BOr | Cil.Shiftlt | Cil.Shiftrt ->
+      | Sparrow_cil.BAnd | Sparrow_cil.BXor | Sparrow_cil.BOr | Sparrow_cil.Shiftlt | Sparrow_cil.Shiftrt ->
           (Texpr1.Cst (Coeff.Interval Interval.top))::l
       | _ -> l) l e2_list) [] e1_list
 
 and bop_to_texpr = function
-  | Cil.PlusA -> Texpr1.Add
-  | Cil.MinusA -> Texpr1.Sub
-  | Cil.Mult -> Texpr1.Mul
-  | Cil.Div -> Texpr1.Div
+  | Sparrow_cil.PlusA -> Texpr1.Add
+  | Sparrow_cil.MinusA -> Texpr1.Sub
+  | Sparrow_cil.Mult -> Texpr1.Mul
+  | Sparrow_cil.Div -> Texpr1.Div
   | _ -> invalid_arg "octSem.ml: bio_to_texpr"
 
-let normalize : Cil.binop -> OctLoc.t -> Texpr1.expr -> (Texpr1.expr * Tcons1.typ)
+let normalize : Sparrow_cil.binop -> OctLoc.t -> Texpr1.expr -> (Texpr1.expr * Tcons1.typ)
 = fun bop lv texpr ->
   let lv = OctLoc.to_var lv in
   match bop with
-    Cil.Lt ->
+    Sparrow_cil.Lt ->
       (Texpr1.Binop
         (Texpr1.Sub,
            Texpr1.Binop (Texpr1.Sub, texpr, Texpr1.Var lv, Texpr1.Int, Texpr1.Near),
            Texpr1.Cst (Coeff.s_of_int 1),
            Texpr1.Int,
            Texpr1.Near), Tcons1.SUPEQ)
-  | Cil.Le ->
+  | Sparrow_cil.Le ->
       (Texpr1.Binop (Texpr1.Sub, texpr, Texpr1.Var lv, Texpr1.Int, Texpr1.Near), Tcons1.SUPEQ)
-  | Cil.Gt ->
+  | Sparrow_cil.Gt ->
       (Texpr1.Binop
          (Texpr1.Sub,
             Texpr1.Binop (Texpr1.Sub, Texpr1.Var lv, texpr, Texpr1.Int, Texpr1.Near),
             Texpr1.Cst (Coeff.s_of_int 1),
             Texpr1.Int,
             Texpr1.Near), Tcons1.SUPEQ)
-  | Cil.Ge ->
+  | Sparrow_cil.Ge ->
       (Texpr1.Binop (Texpr1.Sub, Texpr1.Var lv, texpr, Texpr1.Int, Texpr1.Near), Tcons1.SUPEQ)
-  | Cil.Eq ->
+  | Sparrow_cil.Eq ->
       (Texpr1.Binop (Texpr1.Sub, Texpr1.Var lv, texpr, Texpr1.Int, Texpr1.Near), Tcons1.EQ)
-  | Cil.Ne ->
+  | Sparrow_cil.Ne ->
       (Texpr1.Binop (Texpr1.Sub, Texpr1.Var lv, texpr, Texpr1.Int, Texpr1.Near), Tcons1.DISEQ)
   | _ -> raise (Failure "normalize")
 
-let cond_to_texpr : Proc.t -> PackConf.t -> Pack.t -> OctLoc.t -> Cil.binop -> Cil.exp
+let cond_to_texpr : Proc.t -> PackConf.t -> Pack.t -> OctLoc.t -> Sparrow_cil.binop -> Sparrow_cil.exp
   -> ItvDom.Mem.t -> Mem.t -> (Texpr1.expr * Tcons1.typ) list
 = fun pid packconf pack lv bop e ptrmem mem ->
   exp_to_texpr pid packconf pack e ptrmem mem
@@ -173,7 +173,7 @@ let cond_to_texpr : Proc.t -> PackConf.t -> Pack.t -> OctLoc.t -> Cil.binop -> C
 
 (* natural number : [0, +oo] *)
 let nat_texpr = Texpr1.Cst (Coeff.Interval (Interval.of_scalar (Scalar.of_int 0) (Scalar.of_infty 1)))
-let strlen_texpr_set : Proc.t -> PackConf.t -> Pack.t -> Cil.exp -> ItvDom.Mem.t -> Mem.t -> Texpr1.expr list
+let strlen_texpr_set : Proc.t -> PackConf.t -> Pack.t -> Sparrow_cil.exp -> ItvDom.Mem.t -> Mem.t -> Texpr1.expr list
 = fun pid packconf pack exp ptrmem mem ->
   let set = ItvSem.eval pid exp ptrmem |> ItvDom.Val.allocsites_of_val |> PowOctLoc.of_sizes in
   if PowOctLoc.for_all (fun x ->
@@ -183,7 +183,7 @@ let strlen_texpr_set : Proc.t -> PackConf.t -> Pack.t -> Cil.exp -> ItvDom.Mem.t
   then [nat_texpr]
   else []
 
-let strlen_texpr_prune : Proc.t -> PackConf.t -> Pack.t -> OctLoc.t -> Cil.exp -> ItvDom.Mem.t
+let strlen_texpr_prune : Proc.t -> PackConf.t -> Pack.t -> OctLoc.t -> Sparrow_cil.exp -> ItvDom.Mem.t
   -> Mem.t -> (Texpr1.expr * Tcons1.typ) list
 = fun pid packconf pack lv exp ptrmem mem ->
   let set = ItvSem.eval pid exp ptrmem |> ItvDom.Val.allocsites_of_val |> PowOctLoc.of_sizes in
@@ -192,16 +192,16 @@ let strlen_texpr_prune : Proc.t -> PackConf.t -> Pack.t -> OctLoc.t -> Cil.exp -
       let rv_oct = lookup rv_pack mem in
       if Pack.mem x pack && not (Octagon.is_bot rv_oct) then (octloc_to_texpr x)::el
       else el) set []
-  |> List.map (normalize Cil.Lt lv)
+  |> List.map (normalize Sparrow_cil.Lt lv)
 
 (* ************************** *
  * Abstract semantic function *
  * ************************** *)
 let set : update_mode -> Global.t -> ItvDom.Mem.t -> PackConf.t -> Proc.t -> PowOctLoc.t
-  -> Cil.exp -> Dom.t -> Dom.t
+  -> Sparrow_cil.exp -> Dom.t -> Dom.t
 = fun mode global ptrmem packconf pid lv_set e mem ->
     let simple_e = CilHelper.remove_cast e |> CilHelper.remove_coeff in
-    if try Cil.isIntegralType (Cil.typeOf simple_e) with _ -> false then
+    if try Sparrow_cil.isIntegralType (Sparrow_cil.typeOf simple_e) with _ -> false then
     begin
       PowOctLoc.fold (fun lv l ->
         let pack = PackConf.get_pack packconf lv in
@@ -223,15 +223,15 @@ let forget : update_mode -> Global.t -> PackConf.t -> Proc.t -> PowOctLoc.t -> D
   |> (fun l -> update mode global l mem)
 
 let alloc : update_mode -> Global.t -> ItvDom.Mem.t -> PackConf.t -> Proc.t -> PowOctLoc.t
-  -> PowOctLoc.t -> Cil.exp -> Dom.t -> Dom.t
+  -> PowOctLoc.t -> Sparrow_cil.exp -> Dom.t -> Dom.t
 = fun mode global ptrmem packconf pid lv ptrs e mem ->
   set mode global ptrmem packconf pid ptrs e mem
 
-let rec prune : update_mode -> Global.t -> ItvDom.Mem.t -> PackConf.t -> Proc.t -> Cil.exp -> Dom.t -> Dom.t
+let rec prune : update_mode -> Global.t -> ItvDom.Mem.t -> PackConf.t -> Proc.t -> Sparrow_cil.exp -> Dom.t -> Dom.t
 = fun mode global ptrmem packconf pid exp mem ->
   match exp |> CilHelper.remove_cast |> CilHelper.remove_coeff |> CilHelper.make_cond_simple with
     None -> mem
-  | Some (Cil.BinOp (bop, Cil.Lval lval, e, _))
+  | Some (Sparrow_cil.BinOp (bop, Sparrow_cil.Lval lval, e, _))
     when bop = Lt || bop = Gt || bop = Le || bop = Ge || bop = Eq || bop = Ne ->
       let lv_set = ItvSem.eval_lv pid lval ptrmem |> PowOctLoc.of_locs in
       PowOctLoc.fold (fun lv l ->
@@ -241,13 +241,13 @@ let rec prune : update_mode -> Global.t -> ItvDom.Mem.t -> PackConf.t -> Proc.t 
         List.fold_left (fun l (texpr, typ) ->
           (lv,pack, Octagon.prune lv texpr typ old_oct)::l) l texpr_list) lv_set []
       |> (fun l -> update mode global l mem)
-  | Some (Cil.UnOp (LNot, Lval x, t)) ->
-      prune mode global ptrmem packconf pid (Cil.BinOp (Eq, Lval x, Cil.zero, t)) mem
+  | Some (Sparrow_cil.UnOp (LNot, Lval x, t)) ->
+      prune mode global ptrmem packconf pid (Sparrow_cil.BinOp (Eq, Lval x, Sparrow_cil.zero, t)) mem
   | Some (Lval x) ->
-      prune mode global ptrmem packconf pid (Cil.BinOp (Gt, Lval x, Cil.zero, Cil.intType)) mem
+      prune mode global ptrmem packconf pid (Sparrow_cil.BinOp (Gt, Lval x, Sparrow_cil.zero, Sparrow_cil.intType)) mem
   | _ -> mem
 
-let sparrow_print : ItvDom.Mem.t -> PackConf.t -> Proc.t -> Cil.exp list -> Dom.t -> Cil.location -> unit
+let sparrow_print : ItvDom.Mem.t -> PackConf.t -> Proc.t -> Sparrow_cil.exp list -> Dom.t -> Sparrow_cil.location -> unit
 = fun ptrmem packconf pid exps mem loc ->
   match exps with
     Lval lv::_ ->
@@ -284,15 +284,15 @@ let model_strlen mode packconf node pid lvo exps ptrmem (mem, global) =
 
 let sparrow_arg mode packconf pid exps ptrmem (mem,global) =
   match exps with
-    (Cil.Lval argc)::(Cil.Lval argv)::_ ->
+    (Sparrow_cil.Lval argc)::(Sparrow_cil.Lval argv)::_ ->
       let lv = ItvSem.eval_lv pid argv ptrmem |> PowOctLoc.of_locs in
       let argc_lv = ItvSem.eval_lv pid argc ptrmem |> PowOctLoc.of_locs in
       let argv_a = Allocsite.allocsite_of_ext (Some "argv") |> OctLoc.of_size |> PowOctLoc.singleton in
       let arg_a = Allocsite.allocsite_of_ext (Some "arg") |> OctLoc.of_size |> PowOctLoc.singleton in
       mem
       |> forget mode global packconf pid argc_lv
-      |> prune mode global ptrmem packconf pid (Cil.BinOp (Cil.Ge, Cil.Lval argc, Cil.one, Cil.intType))
-      |> alloc mode global ptrmem packconf pid lv argv_a (Cil.Lval argc)
+      |> prune mode global ptrmem packconf pid (Sparrow_cil.BinOp (Sparrow_cil.Ge, Sparrow_cil.Lval argc, Sparrow_cil.one, Sparrow_cil.intType))
+      |> alloc mode global ptrmem packconf pid lv argv_a (Sparrow_cil.Lval argc)
       |> forget mode global packconf pid arg_a
   | _ -> mem
 
@@ -312,7 +312,7 @@ let model_calloc mode packconf node pid lvo exps ptrmem (mem, global) =
       alloc mode global ptrmem packconf pid lv ptrs size mem
   | _ -> mem
 
-let strdup_texpr : Proc.t -> PackConf.t -> Pack.t -> Cil.exp -> ItvDom.Mem.t -> Mem.t -> Texpr1.expr list
+let strdup_texpr : Proc.t -> PackConf.t -> Pack.t -> Sparrow_cil.exp -> ItvDom.Mem.t -> Mem.t -> Texpr1.expr list
 = fun pid packconf pack exp ptrmem mem ->
   let set = ItvSem.eval pid exp ptrmem |> ItvDom.Val.allocsites_of_val |> PowOctLoc.of_sizes in
   PowOctLoc.fold (fun x l ->
@@ -345,7 +345,7 @@ let model_input mode packconf pid lvo ptrmem (mem,global) =
 let model_unknown mode packconf node pid lvo f exps ptrmem (mem, global) =
   match lvo with
     None -> mem
-  | Some lv when Cil.isArithmeticType (Cil.unrollTypeDeep (Cil.typeOfLval lv)) ->
+  | Some lv when Sparrow_cil.isArithmeticType (Sparrow_cil.unrollTypeDeep (Sparrow_cil.typeOfLval lv)) ->
     let lv = ItvSem.eval_lv pid lv ptrmem in
     let oct_lv = PowOctLoc.of_locs lv in
     forget mode global packconf pid oct_lv mem
@@ -367,7 +367,7 @@ let handle_undefined_functions mode packconf node pid (lvo,f,exps) ptrmem (mem,g
   | "strdup" -> model_strdup mode packconf node pid lvo exps ptrmem (mem, global)
   | _ -> model_unknown mode packconf node pid lvo f exps ptrmem (mem, global)
 
-let binding : update_mode -> Global.t -> ItvDom.Mem.t -> PackConf.t -> Proc.t -> (Loc.t list) BatSet.t -> Cil.exp list -> Dom.t -> Dom.t
+let binding : update_mode -> Global.t -> ItvDom.Mem.t -> PackConf.t -> Proc.t -> (Loc.t list) BatSet.t -> Sparrow_cil.exp list -> Dom.t -> Dom.t
 = fun mode global ptrmem packconf pid paramset args mem ->
   let rec adjust params args new_params new_args =
     match (params, args) with
@@ -409,10 +409,10 @@ let rec run_cmd mode packconf node cmd ptrmem (mem,global) =
   | IntraCfg.Cmd.Csalloc (l,s,_) ->
       let lv = ItvSem.eval_lv pid l ptrmem |> PowOctLoc.of_locs in
       let ptrs = ItvSem.eval_string_alloc node s ptrmem |> ItvDom.Val.allocsites_of_val |> PowOctLoc.of_sizes in
-      let e = Cil.integer (String.length s + 1) in
+      let e = Sparrow_cil.integer (String.length s + 1) in
       alloc mode global ptrmem packconf pid lv ptrs e mem
   | IntraCfg.Cmd.Cassume (e, _) -> prune mode global ptrmem packconf pid e mem
-  | IntraCfg.Cmd.Ccall (lvo, Cil.Lval (Cil.Var f, Cil.NoOffset), arg_exps, loc)
+  | IntraCfg.Cmd.Ccall (lvo, Sparrow_cil.Lval (Sparrow_cil.Var f, Sparrow_cil.NoOffset), arg_exps, loc)
     when Global.is_undef f.vname global -> (* undefined library functions *)
       handle_undefined_functions mode packconf node pid (lvo,f,arg_exps) ptrmem (mem,global) loc
   | IntraCfg.Cmd.Ccall (lvo, f, arg_exps, _) ->
@@ -421,7 +421,7 @@ let rec run_cmd mode packconf node cmd ptrmem (mem,global) =
       else
         let arg_lvars_of_proc f acc =
           let args = InterCfg.argsof global.icfg f in
-          let lvars = List.map (fun x -> Loc.of_lvar f x.Cil.vname x.Cil.vtype) args in
+          let lvars = List.map (fun x -> Loc.of_lvar f x.Sparrow_cil.vname x.Sparrow_cil.vtype) args in
           BatSet.add lvars acc in
         let arg_lvars_set = PowProc.fold arg_lvars_of_proc fs BatSet.empty in
         binding mode global ptrmem packconf pid arg_lvars_set arg_exps mem
@@ -484,7 +484,7 @@ let initial locset = Mem.top locset
 (* ********************** *
  * Buffer overrun checker *
  * ********************** *)
-let check_bo: Proc.t -> OctDom.PackConf.t -> Allocsite.t -> Itv.t -> Cil.exp
+let check_bo: Proc.t -> OctDom.PackConf.t -> Allocsite.t -> Itv.t -> Sparrow_cil.exp
   -> ItvDom.Mem.t -> Dom.t -> Itv.t
 = fun pid packconf a offset idx ptrmem mem ->
   let size = OctLoc.of_size a in

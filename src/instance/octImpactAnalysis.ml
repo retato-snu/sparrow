@@ -9,7 +9,7 @@
 (*                                                                     *)
 (***********************************************************************)
 open Graph
-open Cil
+open Sparrow_cil
 open Global
 open BasicDom
 open Vocab
@@ -41,8 +41,8 @@ let check pid v1 v2opt v2exp ptrmem mem : (AbsOct.t option * Allocsite.t option 
       let oct_status =
         try
           match v2exp, arr.ArrInfo.size with
-           Some (Cil.Lval x), size
-         | Some (Cil.BinOp (_, Cil.Lval x, Cil.Const _, _)), size
+           Some (Sparrow_cil.Lval x), size
+         | Some (Sparrow_cil.BinOp (_, Sparrow_cil.Lval x, Sparrow_cil.Const _, _)), size
             when Itv.lower size >0 && Itv.lower offset >= 0 ->
             let idx_set = ItvSem.eval_lv pid x ptrmem in
             if PowLoc.cardinal idx_set = 1 then
@@ -72,7 +72,7 @@ let inspect_aexp : InterCfg.node -> AlarmExp.t -> ItvDom.Mem.t -> Mem.t
                       status = Proven; desc = desc; src = None }, status)
         | None -> ({node = node; exp = aexp; loc= loc; allocsite = a;
                     status = UnProven; desc = desc; src = None }, status))
-  | DerefExp ((Cil.BinOp (op, e1, e2, _)) as e,loc) when op = Cil.PlusPI || op = Cil.IndexPI ->
+  | DerefExp ((Sparrow_cil.BinOp (op, e1, e2, _)) as e,loc) when op = Sparrow_cil.PlusPI || op = Sparrow_cil.IndexPI ->
       let v = ItvSem.eval (InterCfg.Node.get_pid node) e ptrmem in
       check pid v None (Some e2) ptrmem mem
       |> List.map (fun (status,a,desc) ->
@@ -119,7 +119,7 @@ let inspect_aexp : InterCfg.node -> AlarmExp.t -> ItvDom.Mem.t -> Mem.t
     | Memmove (e1, e2, e3, loc) ->
         let v1 = ItvSem.eval (InterCfg.Node.get_pid node) e1 ptrmem in
         let v2 = ItvSem.eval (InterCfg.Node.get_pid node) e2 ptrmem in
-        let e3_1 = Cil.BinOp (Cil.MinusA, e3, Cil.mone, Cil.intType) in
+        let e3_1 = Sparrow_cil.BinOp (Sparrow_cil.MinusA, e3, Sparrow_cil.mone, Sparrow_cil.intType) in
         let v3 = ItvSem.eval (InterCfg.Node.get_pid node) e3_1 ptrmem in
         let lst1 = check pid v1 (Some v3) (Some e3) ptrmem mem in
         let lst2 = check pid v2 (Some v3) (Some e2) ptrmem mem in

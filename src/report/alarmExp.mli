@@ -8,17 +8,17 @@
 (* See the LICENSE file for details.                                   *)
 (*                                                                     *)
 (***********************************************************************)
-(** Alarm Cil.expression *)
+(** Alarm Sparrow_cil.expression *)
 type t =
-  | ArrayExp of Cil.lval * Cil.exp * Cil.location
-  | DerefExp of Cil.exp * Cil.location
-  | DivExp of Cil.exp * Cil.exp * Cil.location
-  | Strcpy of Cil.exp * Cil.exp * Cil.location
-  | Strcat of Cil.exp * Cil.exp * Cil.location
-  | Strncpy of Cil.exp * Cil.exp * Cil.exp * Cil.location
-  | Memcpy of Cil.exp * Cil.exp * Cil.exp *  Cil.location
-  | Memmove of Cil.exp * Cil.exp * Cil.exp * Cil.location
-  | AllocSize of Cil.exp * Cil.location
+  | ArrayExp of Sparrow_cil.lval * Sparrow_cil.exp * Sparrow_cil.location
+  | DerefExp of Sparrow_cil.exp * Sparrow_cil.location
+  | DivExp of Sparrow_cil.exp * Sparrow_cil.exp * Sparrow_cil.location
+  | Strcpy of Sparrow_cil.exp * Sparrow_cil.exp * Sparrow_cil.location
+  | Strcat of Sparrow_cil.exp * Sparrow_cil.exp * Sparrow_cil.location
+  | Strncpy of Sparrow_cil.exp * Sparrow_cil.exp * Sparrow_cil.exp * Sparrow_cil.location
+  | Memcpy of Sparrow_cil.exp * Sparrow_cil.exp * Sparrow_cil.exp *  Sparrow_cil.location
+  | Memmove of Sparrow_cil.exp * Sparrow_cil.exp * Sparrow_cil.exp * Sparrow_cil.location
+  | AllocSize of Sparrow_cil.exp * Sparrow_cil.location
 
 val collect : IntraCfg.cmd -> t list
 val to_string : t -> string

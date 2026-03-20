@@ -24,16 +24,16 @@ module PowStruct = PowDom.MakeCPO (Struct)
 
 include MapDom.MakeLAT (Loc) (PowStruct)
 
-let make : PowLoc.t -> Cil.compinfo -> t
+let make : PowLoc.t -> Sparrow_cil.compinfo -> t
 = fun ploc s ->
   PowLoc.fold (fun l ->
-    add l (PowStruct.singleton s.Cil.cname)) ploc bot
+    add l (PowStruct.singleton s.Sparrow_cil.cname)) ploc bot
 
-let append_field : t -> Cil.fieldinfo -> PowLoc.t
+let append_field : t -> Sparrow_cil.fieldinfo -> PowLoc.t
 = fun s f ->
   foldi (fun loc info ->
-      if PowStruct.mem f.Cil.fcomp.Cil.cname info then
-        PowLoc.add (Loc.append_field loc f.Cil.fname f.Cil.ftype)
+      if PowStruct.mem f.Sparrow_cil.fcomp.Sparrow_cil.cname info then
+        PowLoc.add (Loc.append_field loc f.Sparrow_cil.fname f.Sparrow_cil.ftype)
       else id) s PowLoc.bot
 
 let pow_loc_of_struct : t -> PowLoc.t = fun str ->

@@ -86,14 +86,14 @@ struct
   let resize orig_st new_st x = Itv.divide (Itv.times x orig_st) new_st
   let cast typ arr =
     match typ with
-      Cil.TPtr ((Cil.TComp (comp, _) as t'), _) ->
+      Sparrow_cil.TPtr ((Sparrow_cil.TComp (comp, _) as t'), _) ->
         let new_stride = try CilHelper.byteSizeOf t' |> Itv.of_int with _ -> Itv.top in
         { offset = resize arr.stride new_stride arr.offset;
           size = resize arr.stride new_stride arr.size;
           null_pos = resize arr.stride new_stride arr.null_pos;
           stride = new_stride;
-          structure = PowStruct.add comp.Cil.cname arr.structure }
-    | Cil.TPtr (t', _) | Cil.TArray (t', _, _) ->
+          structure = PowStruct.add comp.Sparrow_cil.cname arr.structure }
+    | Sparrow_cil.TPtr (t', _) | Sparrow_cil.TArray (t', _, _) ->
         let new_stride = try CilHelper.byteSizeOf t' |> Itv.of_int with _ -> Itv.top in
         { arr with
             offset = resize arr.stride new_stride arr.offset;
@@ -163,7 +163,7 @@ let plus_null_pos : t -> Itv.t -> t
 = fun arr i ->
   map (fun a -> ArrInfo.plus_null_pos a i) arr
 
-let cast_array : Cil.typ -> t -> t
+let cast_array : Sparrow_cil.typ -> t -> t
 = fun typ a ->
   mapi (fun allocsite -> if Allocsite.is_cmd_arg allocsite then id else ArrInfo.cast typ) a
 
@@ -179,12 +179,12 @@ let struct_of_array a =
       if PowStruct.bot <> v.ArrInfo.structure then PowLoc.add (Loc.of_allocsite k)
       else id) a PowLoc.bot
 
-let append_field : t -> Cil.fieldinfo -> PowLoc.t
+let append_field : t -> Sparrow_cil.fieldinfo -> PowLoc.t
 = fun s f ->
   foldi (fun a info ->
-      if PowStruct.mem f.Cil.fcomp.Cil.cname info.ArrInfo.structure then
+      if PowStruct.mem f.Sparrow_cil.fcomp.Sparrow_cil.cname info.ArrInfo.structure then
         let loc = Loc.of_allocsite a in
-        PowLoc.add (Loc.append_field loc f.Cil.fname f.Cil.ftype)
+        PowLoc.add (Loc.append_field loc f.Sparrow_cil.fname f.Sparrow_cil.ftype)
       else id) s PowLoc.bot
 
 let to_string : t -> string = fun x ->

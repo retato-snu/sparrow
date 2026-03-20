@@ -16,7 +16,7 @@ module IntOverflow : sig
 end
 
 module UserInput : sig
-  module Source : sig type t = BasicDom.Node.t * Cil.location end
+  module Source : sig type t = BasicDom.Node.t * Sparrow_cil.location end
   include PowDom.LAT with type elt = Source.t
   val is_taint : t -> bool
 end
@@ -29,7 +29,7 @@ module Val : sig
   include AbsDom.LAT with type t := t
   val int_overflow : t -> IntOverflow.t
   val user_input : t -> UserInput.t
-  val input_value : BasicDom.Node.t -> Cil.location -> t
+  val input_value : BasicDom.Node.t -> Sparrow_cil.location -> t
 end
 
 module Mem : sig

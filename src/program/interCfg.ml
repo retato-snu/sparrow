@@ -11,7 +11,7 @@
 (** Inter-procedural CFG *)
 
 open Vocab
-open Cil
+open Sparrow_cil
 open Yojson.Safe
 open IntraCfg.Cmd
 
@@ -45,7 +45,7 @@ type node = Node.t
 
 type t = {
   cfgs        : (pid, IntraCfg.t) BatMap.t;
-  globals     : Cil.global list;
+  globals     : Sparrow_cil.global list;
   call_edges  : (Node.t, ProcSet.t) BatMap.t;
 }
 
@@ -70,12 +70,12 @@ let global_proc = "_G_"
 let start_node = Node.make global_proc IntraCfg.Node.entry
 
 let gen_cfgs file =
-  BatMap.add global_proc (IntraCfg.generate_global_proc file.Cil.globals (Cil.emptyFunction global_proc))
+  BatMap.add global_proc (IntraCfg.generate_global_proc file.Sparrow_cil.globals (Sparrow_cil.emptyFunction global_proc))
     (list_fold (fun g m ->
       match g with
-      | Cil.GFun (f,loc) -> BatMap.add f.svar.vname (IntraCfg.init f loc) m
+      | Sparrow_cil.GFun (f,loc) -> BatMap.add f.svar.vname (IntraCfg.init f loc) m
       | _ -> m
-    ) file.Cil.globals BatMap.empty)
+    ) file.Sparrow_cil.globals BatMap.empty)
 
 let compute_dom_and_scc icfg =
   { icfg with cfgs =
@@ -140,7 +140,7 @@ let is_inside_loop : node -> t -> bool
 let callof : node -> t -> node
 =fun (pid,node) g -> (pid, IntraCfg.callof node (cfgof g pid))
 
-let argsof : t -> pid -> Cil.varinfo list
+let argsof : t -> pid -> Sparrow_cil.varinfo list
 =fun g pid -> IntraCfg.get_formals (cfgof g pid)
 
 let callnodesof : t -> node list
@@ -206,7 +206,7 @@ let build_strmap : string BatSet.t -> (string, lval) BatMap.t
 =fun strs ->
   BatSet.fold (fun str map ->
     let name = get_cstr_name () in
-    let lv = (Var (Cil.makeGlobalVar name Cil.charPtrType), NoOffset) in
+    let lv = (Var (Sparrow_cil.makeGlobalVar name Sparrow_cil.charPtrType), NoOffset) in
       BatMap.add str lv map
   ) strs BatMap.empty
 
@@ -222,7 +222,7 @@ let replace_salloc : t -> (string, lval) BatMap.t -> t
       | _ -> g
     ) nodes icfg
 
-let dummy_location = { line = 0; file = ""; byte = 0 }
+let dummy_location = { line = 0; file = ""; byte = 0; column = 0; endLine = 0; endByte = 0; endColumn = 0; synthetic = false }
 
 let insert_salloc : t -> (string, lval) BatMap.t -> t
 =fun icfg strmap ->
@@ -251,9 +251,9 @@ let optimize_il : t -> t
   |> map_cfgs IntraCfg.optimize
 (*  |> opt_salloc*)
 
-let init : Cil.file -> t
+let init : Sparrow_cil.file -> t
 =fun file ->
-  { cfgs = gen_cfgs file; globals = file.Cil.globals ; call_edges = BatMap.empty }
+  { cfgs = gen_cfgs file; globals = file.Sparrow_cil.globals ; call_edges = BatMap.empty }
   |> opt !Options.optil optimize_il
   |> compute_dom_and_scc
 

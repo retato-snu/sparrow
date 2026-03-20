@@ -8,7 +8,7 @@
 (* See the LICENSE file for details.                                   *)
 (*                                                                     *)
 (***********************************************************************)
-open Cil
+open Sparrow_cil
 open Global
 open BasicDom
 open Vocab
@@ -185,7 +185,7 @@ let rec simplify_exp e =
 
 and remove_casts e =
   match e with
-  | CastE (typ,e1) -> remove_casts e1
+  | CastE (_, typ,e1) -> remove_casts e1
   | BinOp (bop,e1,e2,typ) -> BinOp (bop,remove_casts e1, remove_casts e2,typ)
   | UnOp (uop,e1,typ) -> UnOp (uop,remove_casts e1,typ)
   | _ -> e
@@ -221,20 +221,20 @@ and is_var e =
 
 let inc_itself_by_one (lv,e) =
   match lv,e with
-  | (Var x, NoOffset), (BinOp (PlusA, Lval (Var y,NoOffset),Const (CInt64 (i,_,_)),_))
-     when x.vname = y.vname && Cil.i64_to_int i = 1 -> true
+  | (Var x, NoOffset), (BinOp (PlusA, Lval (Var y,NoOffset),Const (CInt (i,_,_)),_))
+     when x.vname = y.vname && Sparrow_cil.Cilint.is_int i && Sparrow_cil.Cilint.to_int i = 1 -> true
   | _ -> false
 
 let incptr_itself_by_one (lv,e) =
   match lv,e with
-  | (Var x, NoOffset), (BinOp (PlusPI, Lval (Var y,NoOffset),Const (CInt64 (i,_,_)),_))
-     when x.vname = y.vname && Cil.i64_to_int i = 1 -> true
+  | (Var x, NoOffset), (BinOp (PlusPI, Lval (Var y,NoOffset),Const (CInt (i,_,_)),_))
+     when x.vname = y.vname && Sparrow_cil.Cilint.is_int i && Sparrow_cil.Cilint.to_int i = 1 -> true
   | _ -> false
 
 let inc_itself_by_const (lv,e) =
   match lv,e with
-  | (Var x, NoOffset), (BinOp (PlusA, Lval (Var y,NoOffset),Const (CInt64 (i,_,_)),_))
-     when x.vname = y.vname && Cil.i64_to_int i > 1 -> true
+  | (Var x, NoOffset), (BinOp (PlusA, Lval (Var y,NoOffset),Const (CInt (i,_,_)),_))
+     when x.vname = y.vname && Sparrow_cil.Cilint.is_int i && Sparrow_cil.Cilint.to_int i > 1 -> true
   | _ -> false
 
 let inc_itself_by_var (lv,e) =
@@ -246,14 +246,14 @@ let inc_itself_by_var (lv,e) =
 
 let incptr_itself_by_const (lv,e) =
   match lv,e with
-  | (Var x, NoOffset), (BinOp (PlusPI, Lval (Var y,NoOffset),Const (CInt64 (i,_,_)),_))
-     when x.vname = y.vname && Cil.i64_to_int i > 1 -> true
+  | (Var x, NoOffset), (BinOp (PlusPI, Lval (Var y,NoOffset),Const (CInt (i,_,_)),_))
+     when x.vname = y.vname && Sparrow_cil.Cilint.is_int i && Sparrow_cil.Cilint.to_int i > 1 -> true
   | _ -> false
 
 let mul_itself_by_const (lv,e) =
   match lv,e with
-  | (Var x, NoOffset), (BinOp (Mult, Lval (Var y,NoOffset),Const (CInt64 (i,_,_)),_))
-     when x.vname = y.vname && Cil.i64_to_int i > 1 -> true
+  | (Var x, NoOffset), (BinOp (Mult, Lval (Var y,NoOffset),Const (CInt (i,_,_)),_))
+     when x.vname = y.vname && Sparrow_cil.Cilint.is_int i && Sparrow_cil.Cilint.to_int i > 1 -> true
   | _ -> false
 
 let mul_itself_by_var (lv,e) =
@@ -447,7 +447,7 @@ let is_undef fname global =
 
 let extract_call_ext_fun node pid (lvo,fe,el) mem global feature =
   match lvo,fe with
-  | Some lv, Cil.Lval (Cil.Var f, Cil.NoOffset) when is_undef f.vname global ->
+  | Some lv, Sparrow_cil.Lval (Sparrow_cil.Var f, Sparrow_cil.NoOffset) when is_undef f.vname global ->
     PowLoc.fold add_return_from_ext_fun
       (Access.Info.useof (AccessSem.accessof global node sem_fun mem))
       feature
@@ -467,7 +467,7 @@ let extract_used_index pid mem cmd feature =
             (match q with
             | AlarmExp.ArrayExp (_,e,_) -> e
             | AlarmExp.DerefExp (BinOp(op,_,e2,_),_) -> e2
-            | _ -> Cil.zero (* dummy exp *))
+            | _ -> Sparrow_cil.zero (* dummy exp *))
             mem)
       in PowLoc.fold add_used_as_array_index locs
     ) queries feature
@@ -482,7 +482,7 @@ let extract_used_buf pid mem cmd feature =
             | AlarmExp.ArrayExp (lv,_,_) -> Lval lv
             | AlarmExp.DerefExp (BinOp(op,e1,_,_),_) -> e1
             | AlarmExp.DerefExp (e,_) -> e
-            | _ -> Cil.zero (* dummy exp *))
+            | _ -> Sparrow_cil.zero (* dummy exp *))
             mem)
       in PowLoc.fold add_used_as_array_buf locs
     ) queries feature

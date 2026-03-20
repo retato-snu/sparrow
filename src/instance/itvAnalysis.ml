@@ -9,7 +9,7 @@
 (*                                                                     *)
 (***********************************************************************)
 open Graph
-open Cil
+open Sparrow_cil
 open Global
 open BasicDom
 open Vocab
@@ -128,7 +128,7 @@ let inspect_aexp_bo : InterCfg.node -> AlarmExp.t -> Mem.t -> query list -> quer
     | Memmove (e1, e2, e3, loc) ->
         let v1 = ItvSem.eval (InterCfg.Node.get_pid node) e1 mem in
         let v2 = ItvSem.eval (InterCfg.Node.get_pid node) e2 mem in
-        let e3_1 = Cil.BinOp (Cil.MinusA, e3, Cil.mone, Cil.intType) in
+        let e3_1 = Sparrow_cil.BinOp (Sparrow_cil.MinusA, e3, Sparrow_cil.mone, Sparrow_cil.intType) in
         let v3 = ItvSem.eval (InterCfg.Node.get_pid node) e3_1 mem in
         let lst1 = check_bo v1 (Some v3) in
         let lst2 = check_bo v2 (Some v3) in
@@ -176,38 +176,38 @@ let inspect_aexp_dz : InterCfg.node -> AlarmExp.t -> Mem.t -> query list -> quer
 let machine_gen_code : query -> bool
 = fun q ->
   (* yacc-generated code *)
-  Filename.check_suffix q.loc.Cil.file ".y" || Filename.check_suffix q.loc.Cil.file ".yy.c" ||
-  Filename.check_suffix q.loc.Cil.file ".simple" ||
+  Filename.check_suffix q.loc.Sparrow_cil.file ".y" || Filename.check_suffix q.loc.Sparrow_cil.file ".yy.c" ||
+  Filename.check_suffix q.loc.Sparrow_cil.file ".simple" ||
   (* sparrow-generated code *)
   InterCfg.Node.get_pid q.node = InterCfg.global_proc
 
-let rec unsound_exp : Cil.exp -> bool
+let rec unsound_exp : Sparrow_cil.exp -> bool
 = fun e ->
   match e with
-  | Cil.BinOp (Cil.PlusPI, Cil.Lval (Cil.Mem _, _), _, _) -> true
-  | Cil.BinOp (b, _, _, _) when b = Mod || b = Cil.Shiftlt || b = Shiftrt || b = BAnd
+  | Sparrow_cil.BinOp (Sparrow_cil.PlusPI, Sparrow_cil.Lval (Sparrow_cil.Mem _, _), _, _) -> true
+  | Sparrow_cil.BinOp (b, _, _, _) when b = Mod || b = Sparrow_cil.Shiftlt || b = Shiftrt || b = BAnd
       || b = BOr || b = BXor || b = LAnd || b = LOr -> true
-  | Cil.BinOp (bop, Cil.Lval (Cil.Var _, _), Cil.Lval (Cil.Var _, _), _)
-    when bop = Cil.PlusA || bop = Cil.MinusA -> true
-  | Cil.BinOp (_, e1, e2, _) -> (unsound_exp e1) || (unsound_exp e2)
-  | Cil.CastE (_, e) -> unsound_exp e
-  | Cil.Lval lv -> unsound_lv lv
+  | Sparrow_cil.BinOp (bop, Sparrow_cil.Lval (Sparrow_cil.Var _, _), Sparrow_cil.Lval (Sparrow_cil.Var _, _), _)
+    when bop = Sparrow_cil.PlusA || bop = Sparrow_cil.MinusA -> true
+  | Sparrow_cil.BinOp (_, e1, e2, _) -> (unsound_exp e1) || (unsound_exp e2)
+  | Sparrow_cil.CastE (_, _, e) -> unsound_exp e
+  | Sparrow_cil.Lval lv -> unsound_lv lv
   | _ -> false
 
-and unsound_lv : Cil.lval -> bool = function
-  | (_, Cil.Index _) -> true
-  | (Cil.Var v, _) -> is_global_integer v || is_union v.vtype || is_temp_integer v
-  | (Cil.Mem _, Cil.NoOffset) -> true
+and unsound_lv : Sparrow_cil.lval -> bool = function
+  | (_, Sparrow_cil.Index _) -> true
+  | (Sparrow_cil.Var v, _) -> is_global_integer v || is_union v.vtype || is_temp_integer v
+  | (Sparrow_cil.Mem _, Sparrow_cil.NoOffset) -> true
   | (_, _) -> false
-and is_global_integer v = v.vglob && Cil.isIntegralType v.vtype
+and is_global_integer v = v.vglob && Sparrow_cil.isIntegralType v.vtype
 and is_union typ =
-  match Cil.unrollTypeDeep typ with
-    Cil.TPtr (Cil.TComp (c, _), _) -> not c.cstruct
+  match Sparrow_cil.unrollTypeDeep typ with
+    Sparrow_cil.TPtr (Sparrow_cil.TComp (c, _), _) -> not c.cstruct
   | _ -> false
 and is_temp_integer v =
   !Options.bugfinder >= 2
   && (try String.sub v.vname 0 3 = "tmp" with _ -> false)
-  && Cil.isIntegralType v.vtype
+  && Sparrow_cil.isIntegralType v.vtype
 
 let unsound_aexp : AlarmExp.t -> bool = function
   | ArrayExp (lv, e, _) -> unsound_exp e
@@ -217,14 +217,14 @@ let unsound_aexp : AlarmExp.t -> bool = function
 let formal_param : Global.t -> query -> bool
 = fun global q ->
   let cfg = InterCfg.cfgof global.icfg (InterCfg.Node.get_pid q.node) in
-  let formals = IntraCfg.get_formals cfg |> List.map (fun x -> x.Cil.vname) in
+  let formals = IntraCfg.get_formals cfg |> List.map (fun x -> x.Sparrow_cil.vname) in
   let rec find_exp = function
-    | Cil.BinOp (_, e1, e2, _) -> (find_exp e1) || (find_exp e2)
-    | Cil.CastE (_, e) -> find_exp e
-    | Cil.Lval lv -> find_lv lv
+    | Sparrow_cil.BinOp (_, e1, e2, _) -> (find_exp e1) || (find_exp e2)
+    | Sparrow_cil.CastE (_, _, e) -> find_exp e
+    | Sparrow_cil.Lval lv -> find_lv lv
     | _ -> false
   and find_lv = function
-    | (Cil.Var v, _) -> (List.mem v.vname formals) && Cil.isIntegralType v.vtype
+    | (Sparrow_cil.Var v, _) -> (List.mem v.vname formals) && Sparrow_cil.isIntegralType v.vtype
     | (_, _) -> false
   in
   match q.exp with

@@ -8,14 +8,14 @@
 (* See the LICENSE file for details.                                   *)
 (*                                                                     *)
 (***********************************************************************)
-open Cil
+open Sparrow_cil
 open Vocab
 
 (* ******************* *
  * to_string functions *
  * ******************* *)
 
-let tostring s = Escape.escape_string (Pretty.sprint 0 s)
+let tostring s = Escape.escape_string (Pretty.sprint ~width:0 s)
 
 let rec s_exps : exp list -> string = fun es ->
   string_of_list ~first:"(" ~last:")" ~sep:", " s_exp es
@@ -25,6 +25,8 @@ and s_exp : exp -> string = function
   | Lval l -> s_lv l
   | SizeOf t -> "SizeOf(" ^ s_type t ^ ")"
   | SizeOfE e -> "SizeOfE(" ^ s_exp e ^ ")"
+  | Real e -> "__real__" ^ s_exp_paren e
+  | Imag e -> "__imag__" ^ s_exp_paren e
   | SizeOfStr s -> "SizeOfStr(" ^ s ^ ")"
   | AlignOf t -> "AlignOf(" ^ s_type t ^ ")"
   | AlignOfE e -> "AlignOfE(" ^ s_exp e ^ ")"
@@ -32,7 +34,7 @@ and s_exp : exp -> string = function
   | BinOp (b, e1, e2, _) -> s_exp_paren e1 ^ s_bop b ^ s_exp_paren e2
   | Question (c, e1, e2, _) ->
     s_exp_paren c ^ " ? " ^ s_exp_paren e1 ^ " : " ^ s_exp_paren e2
-  | CastE (t, e) -> "(" ^ s_type t ^ ")" ^ s_exp_paren e
+  | CastE (_, t, e) -> "(" ^ s_type t ^ ")" ^ s_exp_paren e
   | AddrOf l -> "&" ^ s_lv l
   | AddrOfLabel _ -> invalid_arg "AddrOfLabel is not supported."
   | StartOf l -> "StartOf(" ^ s_lv l ^ ")"
@@ -40,7 +42,7 @@ and s_exp : exp -> string = function
 and s_exp_paren : exp -> string
 = fun e ->
   match e with
-  | UnOp _ | BinOp _ | Question _ | CastE _ -> "(" ^ s_exp e ^ ")"
+  | UnOp _ | BinOp _ | Question _ | CastE _ | Real _ | Imag _ -> "(" ^ s_exp e ^ ")"
   | _ -> s_exp e
 
 and s_const : constant -> string
@@ -63,7 +65,7 @@ and s_exp_paren2 : exp -> string
 = fun e ->
   match e with
   | Lval (_, NoOffset) -> s_exp e
-  | Lval _ | UnOp _ | BinOp _ | Question _ | CastE _ -> "(" ^ s_exp e ^ ")"
+  | Lval _ | UnOp _ | BinOp _ | Question _ | CastE _ | Real _ | Imag _ -> "(" ^ s_exp e ^ ")"
   | _ -> s_exp e
 
 and s_offset : offset -> string = function
@@ -78,12 +80,13 @@ and s_bop b = tostring (d_binop () b)
 and s_instr : instr -> string
 =fun i ->
   match i with
-  | Set (lv,exp,_) -> "Set(" ^ s_lv lv ^ "," ^ s_exp exp ^ ")"
-  | Call (Some lv,fexp,params,_) ->
+  | Set (lv,exp,_,_) -> "Set(" ^ s_lv lv ^ "," ^ s_exp exp ^ ")"
+  | Call (Some lv,fexp,params,_,_) ->
       s_lv lv ^ ":= Call(" ^ s_exp fexp ^ s_exps params ^ ")"
-  | Call (None,fexp,params,_) ->
+  | Call (None,fexp,params,_,_) ->
       "Call(" ^ s_exp fexp ^ s_exps params ^ ")"
   | Asm _ -> "Asm"
+  | VarDecl (vi, _) -> "VarDecl(" ^ vi.vname ^ ")"
 
 and s_instrs : instr list -> string
 =fun instrs ->
@@ -131,8 +134,8 @@ let not_binop : binop -> binop = fun op ->
 let rec make_cond_simple : exp -> exp option
 = fun cond ->
   match cond with
-  | BinOp (op, CastE (_, e1), e2, t)
-  | BinOp (op, e1, CastE (_, e2), t) ->
+  | BinOp (op, CastE (_, _, e1), e2, t)
+  | BinOp (op, e1, CastE (_, _, e2), t) ->
     let newe = BinOp (op, e1, e2, t) in
     make_cond_simple newe
   | BinOp (op, Lval _, _, _)
@@ -161,32 +164,32 @@ let rec make_cond_simple : exp -> exp option
   | _ -> None
 
 let rec remove_cast = function
-    Cil.CastE (_, e) -> remove_cast e
-  | Cil.BinOp (b, e1, e2, t) -> Cil.BinOp(b, remove_cast e1, remove_cast e2, t)
-  | Cil.UnOp (u, e, t) -> Cil.UnOp (u, remove_cast e, t)
+    Sparrow_cil.CastE (_, _, e) -> remove_cast e
+  | Sparrow_cil.BinOp (b, e1, e2, t) -> Sparrow_cil.BinOp(b, remove_cast e1, remove_cast e2, t)
+  | Sparrow_cil.UnOp (u, e, t) -> Sparrow_cil.UnOp (u, remove_cast e, t)
   | e -> e
 
 let rec remove_coeff = function
-    Cil.BinOp (Cil.Mult, Cil.SizeOfE _, e1, _)
-  | Cil.BinOp (Cil.Mult, e1, Cil.SizeOfE _, _)
-  | Cil.BinOp (Cil.Mult, Cil.SizeOf _, e1, _)
-  | Cil.BinOp (Cil.Mult, e1, Cil.SizeOf _, _) -> remove_coeff e1
-  | Cil.BinOp (b, e1, e2, t) -> Cil.BinOp(b, remove_coeff e1, remove_coeff e2, t)
-  | Cil.UnOp (u, e, t) -> Cil.UnOp (u, remove_coeff e, t)
+    Sparrow_cil.BinOp (Sparrow_cil.Mult, Sparrow_cil.SizeOfE _, e1, _)
+  | Sparrow_cil.BinOp (Sparrow_cil.Mult, e1, Sparrow_cil.SizeOfE _, _)
+  | Sparrow_cil.BinOp (Sparrow_cil.Mult, Sparrow_cil.SizeOf _, e1, _)
+  | Sparrow_cil.BinOp (Sparrow_cil.Mult, e1, Sparrow_cil.SizeOf _, _) -> remove_coeff e1
+  | Sparrow_cil.BinOp (b, e1, e2, t) -> Sparrow_cil.BinOp(b, remove_coeff e1, remove_coeff e2, t)
+  | Sparrow_cil.UnOp (u, e, t) -> Sparrow_cil.UnOp (u, remove_coeff e, t)
   | e -> e
 
-let is_unsigned : Cil.typ -> bool = function
-  | Cil.TInt (i, _) ->
-    i = Cil.IUChar || i = Cil.IUInt || i = Cil.IUShort || i = Cil.IULong || i = Cil.IULongLong
+let is_unsigned : Sparrow_cil.typ -> bool = function
+  | Sparrow_cil.TInt (i, _) ->
+    i = Sparrow_cil.IUChar || i = Sparrow_cil.IUInt || i = Sparrow_cil.IUShort || i = Sparrow_cil.IULong || i = Sparrow_cil.IULongLong
   | _ -> false
 
-(* NOTE : Cil.bitsSizeOf often fails: just return top for the moment
+(* NOTE : Sparrow_cil.bitsSizeOf often fails: just return top for the moment
  * Adhoc solution: To avoid this failure, translate original C sources
  * into "CIL" (using -il option) and analyze the CIL program. *)
-let byteSizeOf : Cil.typ -> int
+let byteSizeOf : Sparrow_cil.typ -> int
 =fun typ ->
-  try (Cil.bitsSizeOf typ) / 8
+  try (Sparrow_cil.bitsSizeOf typ) / 8
   with e ->
-    (if !Options.verbose >= 2 then prerr_endline ("warn: Cil.bitsSizeOf (" ^ s_type typ ^ ")"));
+    (if !Options.verbose >= 2 then prerr_endline ("warn: Sparrow_cil.bitsSizeOf (" ^ s_type typ ^ ")"));
     raise e
 

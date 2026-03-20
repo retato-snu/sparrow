@@ -45,7 +45,7 @@ module UserInput =
 struct
   module Source =
   struct
-    type t = Node.t * Cil.location
+    type t = Node.t * Sparrow_cil.location
     let to_string (node, loc) =
       Node.to_string node ^ "@" ^ CilHelper.s_location loc
 

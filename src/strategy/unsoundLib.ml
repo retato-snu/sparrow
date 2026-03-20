@@ -9,7 +9,7 @@
 (*                                                                     *)
 (***********************************************************************)
 open Graph
-open Cil
+open Sparrow_cil
 open Global
 open AbsDom
 open Vocab
@@ -152,7 +152,7 @@ let add_return lvo feat =
 let add_return_int pid lvo cfg feat =
   match lvo with
     Some x ->
-    { feat with return_int = (Cil.isIntegralType (Cil.typeOf (Cil.Lval x))) }
+    { feat with return_int = (Sparrow_cil.isIntegralType (Sparrow_cil.typeOf (Sparrow_cil.Lval x))) }
   | _ -> feat
 
 let sem_fun = ItvSem.run AbsSem.Strong ItvSem.Spec.empty
@@ -291,7 +291,7 @@ let lib_feature global cfg trset =
   let scc_list = IntraCfg.get_scc_list cfg |> List.filter (fun x -> List.length x > 1) in
   IntraCfg.fold_node (fun intra_node trset ->
     match IntraCfg.find_cmd intra_node cfg with
-      IntraCfg.Cmd.Ccall (lvo, Cil.Lval (Cil.Var f, Cil.NoOffset), exps, loc)
+      IntraCfg.Cmd.Ccall (lvo, Sparrow_cil.Lval (Sparrow_cil.Var f, Sparrow_cil.NoOffset), exps, loc)
       when Global.is_undef f.vname global &&
            not (List.mem f.vname ignore_libs) -> (* undefined library functions *)
         let libid = (CilHelper.s_location loc)^":"^f.vname in
@@ -332,9 +332,9 @@ let normalize trset =
 
 let extract_feature : Global.t -> data
 = fun global ->
-  let trset = Cil.foldGlobals global.file (fun trset glob ->
+  let trset = Sparrow_cil.foldGlobals global.file (fun trset glob ->
     match glob with
-      Cil.GFun (fd, _) ->
+      Sparrow_cil.GFun (fd, _) ->
         (try
           let cfg = InterCfg.cfgof global.icfg fd.svar.vname in
           lib_feature global cfg trset

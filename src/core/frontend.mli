@@ -8,12 +8,12 @@
 (*                                                                     *)
 (***********************************************************************)
 (** Frontend *)
-open Cil
+open Sparrow_cil
 
 val files : string list ref
 val marshal_file : string ref
 val args : string -> unit
-val parse : unit -> Cil.file
-val makeCFGinfo : Cil.file -> Cil.file
-val is_varargs : string -> Cil.file -> bool
+val parse : unit -> Sparrow_cil.file
+val makeCFGinfo : Sparrow_cil.file -> Sparrow_cil.file
+val is_varargs : string -> Sparrow_cil.file -> bool
 val inline : Global.t -> bool

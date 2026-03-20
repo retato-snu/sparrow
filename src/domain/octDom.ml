@@ -9,7 +9,7 @@
 (*                                                                     *)
 (***********************************************************************)
 (** Octagon domain *)
-open Cil
+open Sparrow_cil
 open BasicDom
 open Global
 open Vocab

@@ -9,7 +9,7 @@
 (*                                                                     *)
 (***********************************************************************)
 open Graph
-open Cil
+open Sparrow_cil
 open Global
 open Vocab
 
@@ -28,7 +28,7 @@ let transform : Global.t -> Global.t
     |> StepManager.stepf true "Pre-analysis (after inline)" PreAnalysis.perform
   else global (* nothing changed *)
 
-let init_analysis : Cil.file -> Global.t
+let init_analysis : Sparrow_cil.file -> Global.t
 = fun file ->
   file
   |> transform_simple
@@ -46,10 +46,10 @@ let print_pgm_info : Global.t -> Global.t
 
 let print_il file =
   (if !Options.inline = [] && BatSet.is_empty !Options.unsound_loop then
-    Cil.dumpFile !Cil.printerForMaincil stdout "" (transform_simple file)
+    Sparrow_cil.dumpFile !Sparrow_cil.printerForMaincil stdout "" (transform_simple file)
   else
     let global = init_analysis file in
-    Cil.dumpFile !Cil.printerForMaincil stdout "" global.file);
+    Sparrow_cil.dumpFile !Sparrow_cil.printerForMaincil stdout "" global.file);
   exit 0
 
 let print_cfg : Global.t -> Global.t
@@ -95,7 +95,7 @@ let main () =
   List.iter (fun f -> prerr_string (f ^ " ")) !Frontend.files;
   prerr_endline "";
 
-  Cil.initCIL ();
+  Sparrow_cil.initCIL ();
 
   try
     StepManager.stepf true "Front-end" Frontend.parse ()

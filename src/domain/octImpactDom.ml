@@ -9,7 +9,7 @@
 (*                                                                     *)
 (***********************************************************************)
 (* Octagon Impact Domain *)
-open Cil
+open Sparrow_cil
 open BasicDom
 open AbsDom
 open OctDom

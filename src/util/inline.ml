@@ -47,13 +47,12 @@
  
  *)
 
-open Pretty
-open Cil
+open Sparrow_cil
 open Feature
-module E = Errormsg
+module E = Sparrow_cil.Errormsg
 module H = Hashtbl
 module IH = Inthash
-module A = Alpha
+module A = Sparrow_cil.Alpha
 
 let debug = false
 
@@ -104,9 +103,9 @@ class copyBodyVisitor     (host: fundec)                (* The host of the
             (* Make a copy of the reference *)
             let sr' = ref (findStmt !sr.sid) in
             s.skind <- Goto (sr',l)
-        | Switch (e, body, cases, l) -> 
+        | Switch (e, body, cases, l1, l2) -> 
             s.skind <- Switch (e, body, 
-                               Util.list_map (fun cs -> findStmt cs.sid) cases, l)
+                               Util.list_map (fun cs -> findStmt cs.sid) cases, l1, l2)
         | _ -> ()
       in
       List.iter patchstmt !patches;
@@ -130,7 +129,7 @@ class copyBodyVisitor     (host: fundec)                (* The host of the
 
   method vinst (i: instr) = 
     match i with 
-      Call (_, Lval (Var vi, _), _, _) when vi.vid == inlining.vid -> 
+      Call (_, Lval (Var vi, _), _, _, _) when vi.vid == inlining.vid -> 
         raise Recursion
 
     | _ -> DoChildren
@@ -168,7 +167,7 @@ class copyBodyVisitor     (host: fundec)                (* The host of the
 
       (* Now deal with the returns *)
       (match s'.skind with 
-      | Return (ro, l) -> begin
+      | Return (ro, l, _) -> begin
           (* Change this into an assignment followed by a Goto *)
           match ro, retlval with 
             _, None -> (* Function called with no return lval *)
@@ -180,7 +179,7 @@ class copyBodyVisitor     (host: fundec)                (* The host of the
                 
           | Some rv, Some retvar-> 
               s'.skind <-
-                Block (mkBlock [ mkStmt (Instr [(Set (var retvar, rv, l))]);
+                Block (mkBlock [ mkStmt (Instr [(Set (var retvar, rv, l, l))]);
                                  mkStmt (Goto (ref retlab, l)) ])
       end
       | _ -> ());
@@ -226,7 +225,7 @@ let replaceStatement (host: fundec)                         (* The host *)
         match rest with 
           [] -> (* Done *) ()
 
-        | (Call (lvo, Lval (Var fvi, NoOffset), args, l) as i) :: resti -> begin
+        | (Call (lvo, Lval (Var fvi, NoOffset), args, l, _) as i) :: resti -> begin
             if debug then 
               E.log "Checking whether to inline %s\n" fvi.vname;
             let replo: fundec option = 
@@ -269,7 +268,7 @@ let replaceStatement (host: fundec)                         (* The host *)
                       * variable, to obey call by value *)
                      (* Make a local and a copy *)
                      let f' = makeTempVar host ~name:f.vname f.vtype in
-                     prevrinstr := (Set (var f', a, l)) :: !prevrinstr;
+                     prevrinstr := (Set (var f', a, l, l)) :: !prevrinstr;
                      IH.add vmap f.vid f';
                      
                      loopArgs args' formals'
@@ -296,7 +295,7 @@ let replaceStatement (host: fundec)                         (* The host *)
                          (* Make a return variable *)
                          let rv = makeTempVar 
                              host ~name:("ret_" ^ repl.svar.vname) rt in
-                         mkStmtOneInstr (Set (lv, Lval (var rv), l)), Some rv
+                         mkStmtOneInstr (Set (lv, Lval (var rv), l, l)), Some rv
                  end
                in
                ret.labels <- [Label (replLabel ("Lret_" ^ repl.svar.vname),

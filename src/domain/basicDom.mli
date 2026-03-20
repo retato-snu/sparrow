@@ -27,8 +27,8 @@ module Allocsite : sig
 end
 
 module Loc : sig
-  type t = GVar of string * Cil.typ | LVar of Proc.t * string * Cil.typ | Allocsite of Allocsite.t
-  | Field of t * field * Cil.typ
+  type t = GVar of string * Sparrow_cil.typ | LVar of Proc.t * string * Sparrow_cil.typ | Allocsite of Allocsite.t
+  | Field of t * field * Sparrow_cil.typ
   and field = string
   include AbsDom.SET with type t := t
   val null : t
@@ -39,21 +39,21 @@ module Loc : sig
   val is_allocsite : t -> bool
   val is_ext_allocsite : t -> bool
   val is_field : t -> bool
-  val of_gvar : string -> Cil.typ -> t
-  val of_lvar : Proc.t -> string -> Cil.typ -> t
-  val append_field : t -> field -> Cil.typ -> t
+  val of_gvar : string -> Sparrow_cil.typ -> t
+  val of_lvar : Proc.t -> string -> Sparrow_cil.typ -> t
+  val append_field : t -> field -> Sparrow_cil.typ -> t
   val of_allocsite : Allocsite.t -> t
-  val return_var : Proc.t -> Cil.typ -> t
+  val return_var : Proc.t -> Sparrow_cil.typ -> t
   val is_local_of : Proc.t -> t -> bool
   val get_proc : t -> Proc.t
-  val typ : t -> Cil.typ option
+  val typ : t -> Sparrow_cil.typ option
 end
 
 module PowLoc : sig
   include PowDom.CPO
   val null : t
-  val prune : Cil.binop -> t -> Cil.exp -> t
-  val append_field : t -> Cil.fieldinfo -> t
+  val prune : Sparrow_cil.binop -> t -> Sparrow_cil.exp -> t
+  val append_field : t -> Sparrow_cil.fieldinfo -> t
 end with type t = PowDom.MakeCPO(Loc).t and type elt = Loc.t
 
 module Dump : MapDom.CPO with type A.t = Proc.t and type B.t = PowLoc.t

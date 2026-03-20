@@ -8,11 +8,11 @@
 (* See the LICENSE file for details.                                   *)
 (*                                                                     *)
 (***********************************************************************)
-open Cil
+open Sparrow_cil
 open Vocab
 open Global
 
-module C = Cil
+module C = Sparrow_cil
 module F = Frontc
 module E = Errormsg
 
@@ -54,22 +54,22 @@ let parse : unit -> C.file
         E.s (E.error "There were errors during merging");
       merged
 
-let makeCFGinfo : Cil.file -> Cil.file
+let makeCFGinfo : Sparrow_cil.file -> Sparrow_cil.file
 =fun f ->
   ignore (Partial.calls_end_basic_blocks f) ;
   ignore (Partial.globally_unique_vids f) ;
-  Cil.iterGlobals f (fun glob -> match glob with
-    Cil.GFun(fd,_) ->
-                  Cil.prepareCFG fd ;
+  Sparrow_cil.iterGlobals f (fun glob -> match glob with
+    Sparrow_cil.GFun(fd,_) ->
+                  Sparrow_cil.prepareCFG fd ;
                   (* jc: blockinggraph depends on this "true" arg *)
-                  ignore (Cil.computeCFGInfo fd true)
+                  ignore (Sparrow_cil.computeCFGInfo fd true)
   | _ -> ());
   f
 
 (* true if the given function has variable number of arguments *)
-let is_varargs : string -> Cil.file -> bool
+let is_varargs : string -> Sparrow_cil.file -> bool
 =fun fid file ->
-  Cil.foldGlobals file (fun b global ->
+  Sparrow_cil.foldGlobals file (fun b global ->
     match global with
     | GFun (fd,_) when fd.svar.vname = fid ->
         (match fd.svar.vtype with

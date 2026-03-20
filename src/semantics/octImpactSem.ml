@@ -8,7 +8,7 @@
 (* See the LICENSE file for details.                                   *)
 (*                                                                     *)
 (***********************************************************************)
-open Cil
+open Sparrow_cil
 open Vocab
 open Global
 open AbsSem
@@ -51,10 +51,10 @@ let update : update_mode -> Global.t -> Proc.t -> AbsOct.t -> Mem.t -> Mem.t
   else Mem.weak_add pack v mem
 
 let rec set : update_mode -> Global.t -> ItvDom.Mem.t -> Proc.t -> PowOctLoc.t
-  -> Cil.exp -> Dom.t -> Dom.t
+  -> Sparrow_cil.exp -> Dom.t -> Dom.t
 = fun mode global ptrmem pid lv_set e mem ->
   let o = lookup mem in
-  if try Cil.isIntegralType (Cil.typeOf e) with _ -> false then
+  if try Sparrow_cil.isIntegralType (Sparrow_cil.typeOf e) with _ -> false then
     match e |> CilHelper.remove_cast |> CilHelper.remove_coeff with
       Const _ ->
         lv_set
@@ -76,10 +76,10 @@ let rec set : update_mode -> Global.t -> ItvDom.Mem.t -> Proc.t -> PowOctLoc.t
                 PowOctLoc.fold2 AbsOct.weak_set_variable lv_set rv_set o)
         |> (fun o -> update mode global pid o mem)
       (* x = y + c *)
-    | BinOp (bop, Lval lval, Const (CInt64 (i, _, _)), _)
-    | BinOp (bop, Const (CInt64 (i, _, _)), Lval lval, _)
+    | BinOp (bop, Lval lval, Const (CInt (i, _, _)), _)
+    | BinOp (bop, Const (CInt (i, _, _)), Lval lval, _)
       (* heuristic: forget the relationship only if x = x + 1 *)
-      when (bop = PlusA && (Cil.i64_to_int i) = 1) || (bop = MinusA && (Cil.i64_to_int i) = -1) ->
+      when (bop = PlusA && (Cilint.to_int i) = 1) || (bop = MinusA && (Cilint.to_int i) = -1) ->
         ItvSem.eval_lv pid lval ptrmem
         |> PowOctLoc.of_locs
         |> (fun rv_set ->
@@ -102,17 +102,17 @@ and forget : update_mode -> Global.t -> Proc.t -> PowOctLoc.t -> Dom.t -> Dom.t
   |> (fun o -> update mode global pid o mem)
 
 let alloc : update_mode -> Global.t -> ItvDom.Mem.t -> Proc.t -> PowOctLoc.t
-  -> PowOctLoc.t -> Cil.exp -> Dom.t -> Dom.t
+  -> PowOctLoc.t -> Sparrow_cil.exp -> Dom.t -> Dom.t
 = fun mode global ptrmem pid lv_set ptrs e mem ->
   set mode global ptrmem pid ptrs e mem
 
-let rec prune : update_mode -> Global.t -> ItvDom.Mem.t -> Proc.t -> Cil.exp
+let rec prune : update_mode -> Global.t -> ItvDom.Mem.t -> Proc.t -> Sparrow_cil.exp
   -> Dom.t -> Dom.t
 = fun mode global ptrmem pid exp mem ->
   let o = lookup mem in
   match exp |> CilHelper.remove_cast |> CilHelper.remove_coeff |> CilHelper.make_cond_simple with
     None -> mem
-  | Some (Cil.BinOp (bop, Cil.Lval x, Cil.Lval y, _))
+  | Some (Sparrow_cil.BinOp (bop, Sparrow_cil.Lval x, Sparrow_cil.Lval y, _))
     when bop = Lt || bop = Le || bop = Eq ->
       (x, y)
       |> BatTuple.Tuple2.mapn (fun lv -> ItvSem.eval_lv pid lv ptrmem)
@@ -125,13 +125,13 @@ let rec prune : update_mode -> Global.t -> ItvDom.Mem.t -> Proc.t -> Cil.exp
             else
               PowOctLoc.fold2 AbsOct.weak_assume lv_set rv_set o)
       |> (fun o -> update mode global pid o mem)
-  | Some (Cil.BinOp (bop, Cil.Lval x, Cil.BinOp (bop2, Cil.Lval y, Cil.Const _, _), t))
-  | Some (Cil.BinOp (bop, Cil.Lval x, Cil.BinOp (bop2, Cil.Const _, Cil.Lval y, _), t))
+  | Some (Sparrow_cil.BinOp (bop, Sparrow_cil.Lval x, Sparrow_cil.BinOp (bop2, Sparrow_cil.Lval y, Sparrow_cil.Const _, _), t))
+  | Some (Sparrow_cil.BinOp (bop, Sparrow_cil.Lval x, Sparrow_cil.BinOp (bop2, Sparrow_cil.Const _, Sparrow_cil.Lval y, _), t))
     when (bop = Lt || bop = Le || bop = Eq) && (bop2 = PlusA || bop2 = MinusA) ->
-      prune mode global ptrmem pid (Cil.BinOp (bop, Cil.Lval x, Cil.Lval y, t)) mem
-  | Some (Cil.BinOp (bop, Cil.Lval x, Cil.Lval y, t))
+      prune mode global ptrmem pid (Sparrow_cil.BinOp (bop, Sparrow_cil.Lval x, Sparrow_cil.Lval y, t)) mem
+  | Some (Sparrow_cil.BinOp (bop, Sparrow_cil.Lval x, Sparrow_cil.Lval y, t))
     when bop = Gt || bop = Ge ->
-      prune mode global ptrmem pid (Cil.BinOp (CilHelper.rev_binop bop, Cil.Lval y, Cil.Lval x, t)) mem
+      prune mode global ptrmem pid (Sparrow_cil.BinOp (CilHelper.rev_binop bop, Sparrow_cil.Lval y, Sparrow_cil.Lval x, t)) mem
   | _ -> mem
 
 let model_realloc mode global node pid lvo exps ptrmem (mem, global) =
@@ -175,7 +175,7 @@ let model_strdup mode pid node lvo exps ptrmem (mem,global) =
   | (_, _) -> mem
 
 
-let sparrow_print : Proc.t -> Cil.exp list -> Dom.t -> Cil.location -> unit
+let sparrow_print : Proc.t -> Sparrow_cil.exp list -> Dom.t -> Sparrow_cil.location -> unit
 = fun pid exps mem loc ->
   lookup mem
   |> AbsOct.to_string
@@ -184,14 +184,14 @@ let sparrow_print : Proc.t -> Cil.exp list -> Dom.t -> Cil.location -> unit
 
 let sparrow_arg mode pid exps ptrmem (mem,global) =
   match exps with
-    (Cil.Lval argc)::(Cil.Lval argv)::_ ->
+    (Sparrow_cil.Lval argc)::(Sparrow_cil.Lval argv)::_ ->
       let lv = ItvSem.eval_lv pid argv ptrmem |> PowOctLoc.of_locs in
       let argc_lv = ItvSem.eval_lv pid argc ptrmem |> PowOctLoc.of_locs in
       let argv_a = Allocsite.allocsite_of_ext (Some "argv") |> OctLoc.of_size |> PowOctLoc.singleton in
       let arg_a = Allocsite.allocsite_of_ext (Some "arg") |> OctLoc.of_size |> PowOctLoc.singleton in
       mem
       |> forget mode global pid argc_lv
-      |> alloc mode global ptrmem pid lv argv_a (Cil.Lval argc)
+      |> alloc mode global ptrmem pid lv argv_a (Sparrow_cil.Lval argc)
       |> forget mode global pid arg_a
   | _ -> mem
 
@@ -226,8 +226,8 @@ let handle_undefined_functions mode node pid (lvo,f,exps) ptrmem (mem,global) lo
     (match lvo with
        None -> mem
      | Some lv ->
-       (match (Cil.unrollTypeDeep (Cil.typeOfLval lv)) with
-          Cil.TInt (_, _) | Cil.TFloat (_, _) ->
+       (match (Sparrow_cil.unrollTypeDeep (Sparrow_cil.typeOfLval lv)) with
+          Sparrow_cil.TInt (_, _) | Sparrow_cil.TFloat (_, _) ->
             let lv = ItvSem.eval_lv pid lv ptrmem in
             let oct_lv = PowOctLoc.of_locs lv in
             forget mode global pid oct_lv mem
@@ -240,7 +240,7 @@ let handle_undefined_functions mode node pid (lvo,f,exps) ptrmem (mem,global) lo
 
 
 
-let binding : update_mode -> Global.t -> ItvDom.Mem.t -> Proc.t -> (Loc.t list) BatSet.t -> Cil.exp list -> Dom.t -> Dom.t
+let binding : update_mode -> Global.t -> ItvDom.Mem.t -> Proc.t -> (Loc.t list) BatSet.t -> Sparrow_cil.exp list -> Dom.t -> Dom.t
 = fun mode global ptrmem pid paramset args mem ->
   let rec adjust params args new_params new_args =
     match (params, args) with
@@ -283,11 +283,11 @@ let rec run_cmd mode node cmd ptrmem (mem,global) =
   | IntraCfg.Cmd.Csalloc (l,s,_) ->
       let lv = ItvSem.eval_lv pid l ptrmem |> PowOctLoc.of_locs in
       let ptrs = ItvSem.eval_string_alloc node s ptrmem |> ItvDom.Val.allocsites_of_val |> PowOctLoc.of_sizes in
-      let e = Cil.integer (String.length s + 1) in
+      let e = Sparrow_cil.integer (String.length s + 1) in
       alloc mode global ptrmem pid lv ptrs e mem
   | IntraCfg.Cmd.Cassume (e, _) ->
       prune mode global ptrmem pid e mem
-  | IntraCfg.Cmd.Ccall (lvo, Cil.Lval (Cil.Var f, Cil.NoOffset), arg_exps, loc)
+  | IntraCfg.Cmd.Ccall (lvo, Sparrow_cil.Lval (Sparrow_cil.Var f, Sparrow_cil.NoOffset), arg_exps, loc)
     when Global.is_undef f.vname global -> (* undefined library functions *)
       let _ = lookup mem in (* for inspection *)
       handle_undefined_functions mode node pid (lvo,f,arg_exps) ptrmem (mem,global) loc
@@ -297,7 +297,7 @@ let rec run_cmd mode node cmd ptrmem (mem,global) =
       else
         let arg_lvars_of_proc f acc =
           let args = InterCfg.argsof global.icfg f in
-          let lvars = List.map (fun x -> Loc.of_lvar f x.Cil.vname x.Cil.vtype) args in
+          let lvars = List.map (fun x -> Loc.of_lvar f x.Sparrow_cil.vname x.Sparrow_cil.vtype) args in
           BatSet.add lvars acc in
         let arg_lvars_set = PowProc.fold arg_lvars_of_proc fs BatSet.empty in
         binding mode global ptrmem pid arg_lvars_set arg_exps mem

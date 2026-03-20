@@ -8,7 +8,7 @@
 (* See the LICENSE file for details.                                   *)
 (*                                                                     *)
 (***********************************************************************)
-open Cil
+open Sparrow_cil
 open Vocab
 open Global
 open AbsSem
@@ -186,8 +186,8 @@ let add_extern global cond feat =
 
 let incptr_itself_by_one (lv,e) =
   match lv,e with
-  | (Var x, NoOffset), (BinOp (PlusPI, Lval (Var y,NoOffset),Const (CInt64 (i,_,_)),_))
-     when x.vname = y.vname && Cil.i64_to_int i = 1 -> true
+  | (Var x, NoOffset), (BinOp (PlusPI, Lval (Var y,NoOffset),Const (CInt (i,_,_)),_))
+     when x.vname = y.vname && Sparrow_cil.Cilint.is_int i && Sparrow_cil.Cilint.to_int i = 1 -> true
   | _ -> false
 
 let add_cstring global cond_node cfg feat =
@@ -245,7 +245,7 @@ let get_cond_exp cond cfg =
 let add_array_content global cond cfg feat =
   let exists_deref_lval = function
       (Var _, offset) as lval ->
-      let (_, offset) = Cil.removeOffsetLval lval in
+      let (_, offset) = Sparrow_cil.removeOffsetLval lval in
       begin match offset with Index (_, _) -> true | _ -> false end
     | (Mem _, NoOffset) -> true
     | (_, _) -> false
@@ -254,7 +254,7 @@ let add_array_content global cond cfg feat =
       Lval lval -> exists_deref_lval lval
     | UnOp (_, e, _) -> exists_deref e
     | BinOp (_, e1, e2, _) -> (exists_deref e1) || (exists_deref e2)
-    | Question (e, _, _, _) | CastE (_, e) -> exists_deref e
+    | Question (e, _, _, _) | CastE (_, _, e) -> exists_deref e
     | _ -> false
   in
   if exists_deref cond then {feat with array_content = true }
@@ -265,7 +265,7 @@ let add_null cond cfg feat =
     | UnOp (LNot, e, _) -> null_condition e
     | Lval _ -> true
     | BinOp (bop, e1, e2, _)
-      when bop = Eq || bop = Ne -> (Cil.isZero e1) || (Cil.isZero e2)
+      when bop = Eq || bop = Ne -> (Sparrow_cil.isZero e1) || (Sparrow_cil.isZero e2)
     | _ -> false
   in
   if null_condition (CilHelper.remove_cast cond) then
@@ -278,7 +278,7 @@ let add_constant cond cfg feat =
     | BinOp (bop, Lval _, (Const _ as c), _)
     | BinOp (bop, (Const _ as c), Lval _, _)
       when bop = Lt || bop = Gt || bop = Le || bop = Ge
-      || bop = Eq || bop = Ne -> Cil.zero <> c
+      || bop = Eq || bop = Ne -> Sparrow_cil.zero <> c
     | _ -> false
   in
   if const_condition (CilHelper.remove_cast cond) then
@@ -470,8 +470,8 @@ let add_diff_array_access cfg scc feat =
 
 let inc_itself_by_one (lv,e) =
   match lv,e with
-  | (Var x, NoOffset), (BinOp (PlusA, Lval (Var y,NoOffset),Const (CInt64 (i,_,_)),_))
-     when x.vname = y.vname && Cil.i64_to_int i = 1 -> true
+  | (Var x, NoOffset), (BinOp (PlusA, Lval (Var y,NoOffset),Const (CInt (i,_,_)),_))
+     when x.vname = y.vname && Sparrow_cil.Cilint.is_int i && Sparrow_cil.Cilint.to_int i = 1 -> true
   | _ -> false
 
 let add_idx_pp cfg scc feat =
@@ -567,12 +567,12 @@ let extract global cfg loop_info trset =
 let rec generate_loop_info loopid stmts loop_info =
   List.fold_left (fun info stmt ->
     match stmt.skind with
-      Loop (blk, loc, _, _) -> generate_loop_info loc blk.bstmts info
-    | If (_, tb, fb, _) ->
+      Loop (blk, loc, _, _, _) -> generate_loop_info loc blk.bstmts info
+    | If (_, tb, fb, _, _) ->
         (BatMap.add stmt.sid (CilHelper.s_location loopid) info)
         |> generate_loop_info loopid tb.bstmts |> generate_loop_info loopid fb.bstmts
     | Block blk -> generate_loop_info loopid blk.bstmts info
-    | Switch (_, blk, _, _) -> generate_loop_info loopid blk.bstmts info
+    | Switch (_, blk, _, _, _) -> generate_loop_info loopid blk.bstmts info
     | _ -> BatMap.add stmt.sid (CilHelper.s_location loopid) info) loop_info stmts
 
 let normalize trset =
@@ -602,11 +602,11 @@ let normalize trset =
 
 let extract_feature : Global.t -> data
 = fun global ->
-  let trset = Cil.foldGlobals global.file (fun trset glob ->
+  let trset = Sparrow_cil.foldGlobals global.file (fun trset glob ->
     match glob with
-      Cil.GFun (fd, _) ->
+      Sparrow_cil.GFun (fd, _) ->
         (try
-          let loop_info = generate_loop_info Cil.locUnknown fd.sbody.bstmts BatMap.empty in
+          let loop_info = generate_loop_info Sparrow_cil.locUnknown fd.sbody.bstmts BatMap.empty in
           let cfg = InterCfg.cfgof global.icfg fd.svar.vname in
           extract global cfg loop_info trset
         with _ -> trset)
@@ -619,11 +619,11 @@ let extract_feature : Global.t -> data
 
 class loopRemoveVisitor (loops: string BatSet.t) = object(self)
   inherit nopCilVisitor
-  method vstmt (s: Cil.stmt) =
+  method vstmt (s: Sparrow_cil.stmt) =
     match s.skind with
-      Loop (blk,loc,_,_) when BatSet.mem (CilHelper.s_location loc) loops ->
-        Cil.ChangeDoChildrenPost (Cil.mkStmt (Cil.Block blk), id)
-    | _ -> Cil.DoChildren
+      Loop (blk,loc,_,_,_) when BatSet.mem (CilHelper.s_location loc) loops ->
+        Sparrow_cil.ChangeDoChildrenPost (Sparrow_cil.mkStmt (Sparrow_cil.Block blk), id)
+    | _ -> Sparrow_cil.DoChildren
 end
 
 let print_feature : data -> unit
@@ -661,5 +661,5 @@ let transform : Global.t -> bool
 = fun global ->
   let target_loops = BatSet.union (get_harmless_loops global) !Options.unsound_loop in
   let vis = new loopRemoveVisitor target_loops in
-  ignore(Cil.visitCilFile vis global.file);
+  ignore(Sparrow_cil.visitCilFile vis global.file);
   not (BatSet.is_empty target_loops)

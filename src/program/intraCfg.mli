@@ -20,27 +20,27 @@ module NodeSet : BatSet.S with type elt = Node.t
 
 module Cmd : sig
   type t =
-  | Cinstr of Cil.instr list
-  | Cif of Cil.exp * Cil.block * Cil.block * Cil.location
-  | CLoop of Cil.location
+  | Cinstr of Sparrow_cil.instr list
+  | Cif of Sparrow_cil.exp * Sparrow_cil.block * Sparrow_cil.block * Sparrow_cil.location
+  | CLoop of Sparrow_cil.location
   (* final graph has the following cmds only *)
-  | Cset of Cil.lval * Cil.exp * Cil.location
-  | Cexternal of Cil.lval * Cil.location
-  | Calloc of Cil.lval * alloc * static * Cil.location
-  | Csalloc of Cil.lval * string * Cil.location
-  | Cfalloc of Cil.lval * Cil.fundec * Cil.location
-  | Cassume of Cil.exp * Cil.location
-  | Ccall of Cil.lval option * Cil.exp * Cil.exp list * Cil.location
-  | Creturn of Cil.exp option * Cil.location
-  | Casm of Cil.attributes * string list *
-            (string option * string * Cil.lval) list *
-            (string option * string * Cil.exp) list *
-            string list * Cil.location
+  | Cset of Sparrow_cil.lval * Sparrow_cil.exp * Sparrow_cil.location
+  | Cexternal of Sparrow_cil.lval * Sparrow_cil.location
+  | Calloc of Sparrow_cil.lval * alloc * static * Sparrow_cil.location
+  | Csalloc of Sparrow_cil.lval * string * Sparrow_cil.location
+  | Cfalloc of Sparrow_cil.lval * Sparrow_cil.fundec * Sparrow_cil.location
+  | Cassume of Sparrow_cil.exp * Sparrow_cil.location
+  | Ccall of Sparrow_cil.lval option * Sparrow_cil.exp * Sparrow_cil.exp list * Sparrow_cil.location
+  | Creturn of Sparrow_cil.exp option * Sparrow_cil.location
+  | Casm of Sparrow_cil.attributes * string list *
+            (string option * string * Sparrow_cil.lval) list *
+            (string option * string * Sparrow_cil.exp) list *
+            string list * Sparrow_cil.location
   | Cskip
-  and alloc = Array of Cil.exp | Struct of Cil.compinfo
+  and alloc = Array of Sparrow_cil.exp | Struct of Sparrow_cil.compinfo
   and static = bool
 
-  val fromCilStmt : Cil.stmtkind -> t
+  val fromCilStmt : Sparrow_cil.stmtkind -> t
   val to_string : t -> string
 end
 
@@ -49,11 +49,11 @@ type t
 and node = Node.t
 and cmd = Cmd.t
 
-val init : Cil.fundec -> Cil.location -> t
-val generate_global_proc : Cil.global list -> Cil.fundec -> t
+val init : Sparrow_cil.fundec -> Sparrow_cil.location -> t
+val generate_global_proc : Sparrow_cil.global list -> Sparrow_cil.fundec -> t
 
 val get_pid : t -> string
-val get_formals : t -> Cil.varinfo list
+val get_formals : t -> Sparrow_cil.varinfo list
 val get_scc_list : t -> node list list
 
 val nodesof : t -> node list

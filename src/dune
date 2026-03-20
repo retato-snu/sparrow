@@ -5,12 +5,12 @@
  (public_name sparrow.lib)
  (wrapped false)
  (libraries 
-   batteries 
-   findlib findlib.internal findlib.dynload dynlink 
-   cil cil.partial cil.blockinggraph cil.callgraph cil.canonicalize cil.ccl cil.cqualann cil.dataslicing cil.epicenter cil.heapify cil.inliner cil.liveness cil.llvm cil.logcalls cil.logwrites cil.oneret cil.pta cil.sfi cil.simplemem cil.simplify cil.zrapp 
-   gmp apron apron.octMPQ ocamlgraph yojson pyml threads str unix num)
+   batteries findlib findlib.internal findlib.dynload dynlink 
+    goblint-cil
+    goblint-cil.makecfg
+    gmp apron apron.octMPQ ocamlgraph yojson pyml threads str unix num)
  (preprocess (pps ppx_compare ppx_deriving.std))
- (flags (:standard -warn-error -a))
+ (flags :standard -w -7-27-32-33-34-38-39)
  (modules (:standard \ main vis))
  (modules_without_implementation absDom absSem))
 
@@ -18,5 +18,5 @@
  (names main vis)
  (public_names sparrow sparrow-vis)
  (libraries sparrow_lib findlib findlib.internal findlib.dynload dynlink)
- (flags (:standard -warn-error -a))
+ (flags :standard -w -7-27-32-33-34-38-39)
  (modules main vis))

@@ -14,13 +14,13 @@ type status = Proven | UnProven | BotAlarm
 type query = {
   node : InterCfg.node;
   exp : AlarmExp.t;
-  loc : Cil.location;
+  loc : Sparrow_cil.location;
   allocsite : BasicDom.Allocsite.t option;
-  src : (InterCfg.node * Cil.location) option;
+  src : (InterCfg.node * Sparrow_cil.location) option;
   status : status;
   desc : string
 }
-type part_unit = Cil.location
+type part_unit = Sparrow_cil.location
 val sort_partition : (part_unit * query list) list -> (part_unit * query list) list
 val string_of_alarminfo : Itv.t -> Itv.t -> string
 val string_of_query : query -> string

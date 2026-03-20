@@ -9,7 +9,7 @@
 (*                                                                     *)
 (***********************************************************************)
 open Graph
-open Cil
+open Sparrow_cil
 open Global
 open BasicDom
 open Vocab
@@ -78,7 +78,7 @@ let inspect_aexp : PackConf.t -> InterCfg.node -> AlarmExp.t -> ItvDom.Mem.t ->
       check packconf pid v1 (Some v2) (Some e) ptrmem mem
       |> List.map (fun (status,a,desc) -> { node = node; exp = aexp; loc = loc;
           allocsite = a; status = status; desc = desc; src = None })
-  | DerefExp (Cil.BinOp (op, e1, e2, _) ,loc) when op = Cil.PlusPI || op = Cil.IndexPI ->
+  | DerefExp (Sparrow_cil.BinOp (op, e1, e2, _) ,loc) when op = Sparrow_cil.PlusPI || op = Sparrow_cil.IndexPI ->
       let v1 = ItvSem.eval (InterCfg.Node.get_pid node) e1 ptrmem in
       let v2 = ItvSem.eval (InterCfg.Node.get_pid node) e2 ptrmem in
       check packconf pid v1 (Some v2) (Some e2) ptrmem mem
@@ -118,7 +118,7 @@ let inspect_aexp : PackConf.t -> InterCfg.node -> AlarmExp.t -> ItvDom.Mem.t ->
     | Memmove (e1, e2, e3, loc) ->
         let v1 = ItvSem.eval (InterCfg.Node.get_pid node) e1 ptrmem in
         let v2 = ItvSem.eval (InterCfg.Node.get_pid node) e2 ptrmem in
-        let e3_1 = Cil.BinOp (Cil.MinusA, e3, Cil.mone, Cil.intType) in
+        let e3_1 = Sparrow_cil.BinOp (Sparrow_cil.MinusA, e3, Sparrow_cil.mone, Sparrow_cil.intType) in
         let v3 = ItvSem.eval (InterCfg.Node.get_pid node) e3_1 ptrmem in
         let lst1 = check packconf pid v1 (Some v3) (Some e3) ptrmem mem in
         let lst2 = check packconf pid v2 (Some v3) (Some e2) ptrmem mem in
@@ -148,7 +148,7 @@ let inspect_alarm : Global.t -> Spec.t -> Table.t -> Report.query list
 (* x = y *)
 let sparrow_relation_set pid mem exps rel =
   match exps with
-    (Cil.Lval x)::(Cil.Lval y)::_ ->
+    (Sparrow_cil.Lval x)::(Sparrow_cil.Lval y)::_ ->
       let lv_x = ItvSem.eval_lv pid x mem in
       let lv_y = ItvSem.eval_lv pid y mem in
       PowLoc.fold (fun x ->
@@ -159,7 +159,7 @@ let sparrow_relation_set pid mem exps rel =
 (* x = malloc(y) *)
 let sparrow_relation_malloc pid mem exps rel =
   match exps with
-    x::(Cil.Lval y)::_ ->
+    x::(Sparrow_cil.Lval y)::_ ->
       let lv_x = ItvSem.eval pid x mem |> ItvDom.Val.allocsites_of_val in
       let lv_y = ItvSem.eval_lv pid y mem in
       BatSet.fold (fun x ->
@@ -170,7 +170,7 @@ let sparrow_relation_malloc pid mem exps rel =
 (* x = strlen(y) *)
 let sparrow_relation_strlen pid mem exps rel =
   match exps with
-    (Cil.Lval x)::y::_ ->
+    (Sparrow_cil.Lval x)::y::_ ->
       let lv_x = ItvSem.eval_lv pid x mem in
       let lv_y = ItvSem.eval pid y mem |> ItvDom.Val.allocsites_of_val in
       PowLoc.fold (fun x ->
@@ -185,7 +185,7 @@ let manual_packing : Global.t * ItvDom.Table.t -> PackConf.t
       let mem = ItvDom.Table.find n itvinputof in
       let pid = InterCfg.Node.get_pid n in
       match InterCfg.cmdof global.icfg n with
-      | IntraCfg.Cmd.Ccall (None, Cil.Lval (Cil.Var f, Cil.NoOffset), exps, _) ->
+      | IntraCfg.Cmd.Ccall (None, Sparrow_cil.Lval (Sparrow_cil.Var f, Sparrow_cil.NoOffset), exps, _) ->
         if f.vname = "sparrow_relation_set" then sparrow_relation_set pid mem exps a
         else if f.vname = "sparrow_relation_malloc" then sparrow_relation_malloc pid mem exps a
         else if f.vname = "sparrow_relation_strlen" then sparrow_relation_strlen pid mem exps a

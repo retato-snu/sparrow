@@ -1,5 +1,5 @@
 open Vocab
-open Cil
+open Sparrow_cil
 open IntraCfg
 open AbsSem
 open BasicDom
@@ -41,29 +41,30 @@ let inspect_overflow v1 v2 itv1 itv2 =
 
 let eval_bop b v1 v2 itv1 itv2 =
   match b with
-  | Cil.PlusA | Cil.MinusA | Cil.Mult
-  | Cil.PlusPI | Cil.IndexPI | Cil.MinusPI | Cil.MinusPP | Cil.Div
-  | Cil.Shiftlt | Cil.Shiftrt | Cil.Mod | Cil.BAnd | Cil.BXor | Cil.BOr -> (* overflow may happen *)
+  | Sparrow_cil.PlusA | Sparrow_cil.MinusA | Sparrow_cil.Mult
+  | Sparrow_cil.PlusPI | Sparrow_cil.IndexPI | Sparrow_cil.MinusPI | Sparrow_cil.MinusPP | Sparrow_cil.Div
+  | Sparrow_cil.Shiftlt | Sparrow_cil.Shiftrt | Sparrow_cil.Mod | Sparrow_cil.BAnd | Sparrow_cil.BXor | Sparrow_cil.BOr -> (* overflow may happen *)
     let user_input = UserInput.join v1.Val.user_input v2.Val.user_input in
     let int_overflow = inspect_overflow v1 v2 itv1 itv2 in
     { Val.int_overflow; user_input }
-  | Cil.Lt | Cil.Gt | Cil.Le | Cil.Ge | Cil.Eq | Cil.Ne | Cil.LAnd | Cil.LOr -> Val.bot
+  | Sparrow_cil.Lt | Sparrow_cil.Gt | Sparrow_cil.Le | Sparrow_cil.Ge | Sparrow_cil.Eq | Sparrow_cil.Ne | Sparrow_cil.LAnd | Sparrow_cil.LOr -> Val.bot
 
 let rec eval pid e itvmem mem =
   match e with
-  | Cil.Const _ | Cil.SizeOf _ | Cil.SizeOfE _ | Cil.SizeOfStr _
-  | Cil.AlignOf _ | Cil.AlignOfE _ | Cil.UnOp (_, _, _)
-  | Cil.AddrOf _ | Cil.AddrOfLabel _ | Cil.StartOf _ -> Val.bot
-  | Cil.Lval l -> lookup (ItvSem.eval_lv pid l itvmem) mem
-  | Cil.BinOp (b, e1, e2, _) ->
+  | Sparrow_cil.Const _ | Sparrow_cil.SizeOf _ | Sparrow_cil.SizeOfE _ | Sparrow_cil.SizeOfStr _
+  | Sparrow_cil.AlignOf _ | Sparrow_cil.AlignOfE _ | Sparrow_cil.UnOp (_, _, _)
+  | Sparrow_cil.AddrOf _ | Sparrow_cil.AddrOfLabel _ | Sparrow_cil.StartOf _ -> Val.bot
+  | Sparrow_cil.Real _ | Sparrow_cil.Imag _ -> Val.bot
+  | Sparrow_cil.Lval l -> lookup (ItvSem.eval_lv pid l itvmem) mem
+  | Sparrow_cil.BinOp (b, e1, e2, _) ->
     let (itv1, itv2) =
       (ItvSem.eval pid e1 itvmem |> ItvDom.Val.itv_of_val,
        ItvSem.eval pid e2 itvmem |> ItvDom.Val.itv_of_val)
     in
     eval_bop b (eval pid e1 itvmem mem) (eval pid e2 itvmem mem) itv1 itv2
-  | Cil.Question (_, e2, e3, _) -> (* pruning *)
+  | Sparrow_cil.Question (_, e2, e3, _) -> (* pruning *)
     Val.join (eval pid e2 itvmem mem) (eval pid e3 itvmem mem)
-  | Cil.CastE (_, e) -> eval pid e itvmem mem
+  | Sparrow_cil.CastE (_, _, e) -> eval pid e itvmem mem
 
 let eval_list pid exps itvmem mem =
   List.map (fun e -> eval pid e itvmem mem) exps
@@ -81,7 +82,7 @@ let sparrow_print pid exps itvmem mem loc =
 (* argc, argv *)
 let sparrow_arg mode node exps loc itvmem (mem,global) =
   match exps with
-    (Cil.Lval argc)::(Cil.Lval argv)::_ ->
+    (Sparrow_cil.Lval argc)::(Sparrow_cil.Lval argv)::_ ->
       let argv_a = Allocsite.allocsite_of_ext (Some "argv") in
       let arg_a = Allocsite.allocsite_of_ext (Some "arg") in
       let pid = Node.get_pid node in
@@ -93,7 +94,7 @@ let sparrow_arg mode node exps loc itvmem (mem,global) =
 (* optind, optarg *)
 let sparrow_opt mode node exps loc itvmem (mem,global) =
   match exps with
-    (Cil.Lval optind)::(Cil.Lval optarg)::_ ->
+    (Sparrow_cil.Lval optind)::(Sparrow_cil.Lval optarg)::_ ->
       let arg_a = Allocsite.allocsite_of_ext (Some "arg") in
       update mode global (PowLoc.singleton (Loc.of_allocsite arg_a)) (Val.input_value node loc) mem
   | _ -> mem
@@ -292,7 +293,7 @@ let run_cmd mode node cmd itvmem (mem, global) =
   | IntraCfg.Cmd.Csalloc (l, s, loc) -> mem
   | IntraCfg.Cmd.Cfalloc (l, fd, _) -> mem
   | IntraCfg.Cmd.Cassume (e, _) -> mem
-  | IntraCfg.Cmd.Ccall (lvo, Cil.Lval (Cil.Var f, Cil.NoOffset), arg_exps, loc)
+  | IntraCfg.Cmd.Ccall (lvo, Sparrow_cil.Lval (Sparrow_cil.Var f, Sparrow_cil.NoOffset), arg_exps, loc)
     when Global.is_undef f.vname global -> (* undefined library functions *)
     let _ = eval_list pid arg_exps itvmem mem in (* for inspection *)
     handle_undefined_functions mode node (lvo,f,arg_exps) itvmem (mem,global) loc
@@ -302,7 +303,7 @@ let run_cmd mode node cmd itvmem (mem, global) =
     else
       let arg_lvars_of_proc f acc =
         let args = InterCfg.argsof global.icfg f in
-        let lvars = List.map (fun x -> Loc.of_lvar f x.Cil.vname x.Cil.vtype) args in
+        let lvars = List.map (fun x -> Loc.of_lvar f x.Sparrow_cil.vname x.Sparrow_cil.vtype) args in
         BatSet.add lvars acc in
       let arg_lvars_set = PowProc.fold arg_lvars_of_proc fs BatSet.empty in
       let arg_vals = eval_list pid arg_exps itvmem mem in
@@ -312,7 +313,7 @@ let run_cmd mode node cmd itvmem (mem, global) =
       | None -> mem
       | Some e ->
         update Weak global
-          (Loc.return_var pid (Cil.typeOf e) |> PowLoc.singleton)
+          (Loc.return_var pid (Sparrow_cil.typeOf e) |> PowLoc.singleton)
           (eval pid e itvmem mem) mem)
   | IntraCfg.Cmd.Cskip when InterCfg.is_returnnode node global.icfg ->
     let callnode = InterCfg.callof node global.icfg in
@@ -320,7 +321,7 @@ let run_cmd mode node cmd itvmem (mem, global) =
        IntraCfg.Cmd.Ccall (Some lv, f, _, _) ->
         let callees = ItvDom.Val.pow_proc_of_val (ItvSem.eval pid f itvmem) in
         let retvar_set = PowProc.fold (fun f ->
-          let ret = Loc.return_var f (Cil.typeOfLval lv) in
+          let ret = Loc.return_var f (Sparrow_cil.typeOfLval lv) in
           PowLoc.add ret) callees PowLoc.empty in
         update Weak global (ItvSem.eval_lv pid lv itvmem) (lookup retvar_set mem) mem
      | _ -> mem)

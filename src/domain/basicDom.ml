@@ -71,8 +71,8 @@ end
 
 module Loc =
 struct
-  type t = GVar of string * Cil.typ | LVar of Proc.t * string * Cil.typ
-         | Allocsite of Allocsite.t | Field of t * field * Cil.typ
+  type t = GVar of string * Sparrow_cil.typ | LVar of Proc.t * string * Sparrow_cil.typ
+         | Allocsite of Allocsite.t | Field of t * field * Sparrow_cil.typ
   and field = string
 
   let rec compare x y =
@@ -86,7 +86,7 @@ struct
       let c = compare l1 l2 in
       if c = 0 then
         let c = String.compare f1 f2 in
-        if c = 0 then Stdlib.compare (Cil.typeSig t1) (Cil.typeSig t2)
+        if c = 0 then Stdlib.compare (Sparrow_cil.typeSig t1) (Sparrow_cil.typeSig t2)
         else c
       else c
     | _, _ -> Stdlib.compare (tag_of_t x) (tag_of_t y)
@@ -102,8 +102,8 @@ struct
 
   let pp fmt x = Format.fprintf fmt "%s" (to_string x)
 
-  let dummy = GVar ("__dummy__", Cil.voidType)
-  let null = GVar ("NULL", Cil.voidPtrType)
+  let dummy = GVar ("__dummy__", Sparrow_cil.voidType)
+  let null = GVar ("NULL", Sparrow_cil.voidPtrType)
 
   let is_null x = (x = null)
   let is_var : t -> bool = function
@@ -156,15 +156,15 @@ struct
 
   let prune op x e =
     match op with
-      Cil.Eq when Cil.isZero e -> singleton Loc.null
-    | Cil.Ne when Cil.isZero e -> remove Loc.null x
+      Sparrow_cil.Eq when Sparrow_cil.isZero e -> singleton Loc.null
+    | Sparrow_cil.Ne when Sparrow_cil.isZero e -> remove Loc.null x
     | _ -> x
   let null = singleton Loc.null
-  let append_field : t -> Cil.fieldinfo -> t = fun ls f ->
+  let append_field : t -> Sparrow_cil.fieldinfo -> t = fun ls f ->
     let add_appended l acc =
       if Loc.is_ext_allocsite l then add l acc
       else if Loc.is_null l || Loc.is_string_allocsite l then acc
-      else add (Loc.append_field l f.Cil.fname f.Cil.ftype) acc
+      else add (Loc.append_field l f.Sparrow_cil.fname f.Sparrow_cil.ftype) acc
     in
     fold add_appended ls bot
 end

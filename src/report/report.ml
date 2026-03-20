@@ -11,23 +11,23 @@
 open Vocab
 open BasicDom
 open ItvDom
-open Cil
+open Sparrow_cil
 open IntraCfg
 open Cmd
 open AlarmExp
 
 type target = BO | ND | DZ
 type status = Proven | UnProven | BotAlarm
-type part_unit = Cil.location
+type part_unit = Sparrow_cil.location
 
 let status_to_string = function Proven -> "Proven" | UnProven -> "UnProven" | _ -> "BotAlarm"
 
 type query = {
   node : InterCfg.node;
   exp : AlarmExp.t;
-  loc : Cil.location;
+  loc : Sparrow_cil.location;
   allocsite : Allocsite.t option;
-  src : (InterCfg.node * Cil.location) option;
+  src : (InterCfg.node * Sparrow_cil.location) option;
   status : status;
   desc : string
 }

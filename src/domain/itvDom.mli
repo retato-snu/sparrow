@@ -30,7 +30,7 @@ module Val : sig
   val modify_arr : ArrayBlk.t -> t -> t
   val external_value : BasicDom.Allocsite.t -> t
   val itv_top : t
-  val cast : Cil.typ -> Cil.typ -> t -> t
+  val cast : Sparrow_cil.typ -> Sparrow_cil.typ -> t -> t
 end
 
 module Mem : sig

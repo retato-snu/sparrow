@@ -31,10 +31,10 @@ val global_proc : Proc.t
 (** Starting point of program *)
 val start_node : node
 
-val init : Cil.file -> t
+val init : Sparrow_cil.file -> t
 
 val cfgof : t -> pid -> IntraCfg.t
-val argsof : t -> pid -> Cil.varinfo list
+val argsof : t -> pid -> Sparrow_cil.varinfo list
 val cmdof : t -> Node.t -> IntraCfg.cmd
 
 val pidsof : t -> pid list

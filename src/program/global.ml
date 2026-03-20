@@ -14,7 +14,7 @@ open BasicDom
 open InterCfg
 
 type t = {
-  file : Cil.file;
+  file : Sparrow_cil.file;
   icfg : InterCfg.t;
   callgraph : CallGraph.t;
   dump : Dump.t;

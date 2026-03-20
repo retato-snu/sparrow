@@ -48,12 +48,12 @@ struct
 
   let itv_top : t = (Itv.top, PowLoc.bot, ArrayBlk.bot, StructBlk.bot, PowProc.bot)
 
-  let cast : Cil.typ -> Cil.typ -> t -> t
+  let cast : Sparrow_cil.typ -> Sparrow_cil.typ -> t -> t
   = fun from_typ to_typ v ->
-    let (from_typ, to_typ) = BatTuple.Tuple2.mapn Cil.unrollTypeDeep (from_typ, to_typ) in
-    if v = (of_itv Itv.zero) && (Cil.isPointerType to_typ) then (* char* x = (char* ) 0 *)
+    let (from_typ, to_typ) = BatTuple.Tuple2.mapn Sparrow_cil.unrollTypeDeep (from_typ, to_typ) in
+    if v = (of_itv Itv.zero) && (Sparrow_cil.isPointerType to_typ) then (* char* x = (char* ) 0 *)
       null
-    else if Cil.isIntegralType to_typ then
+    else if Sparrow_cil.isIntegralType to_typ then
       v |> itv_of_val |> Itv.cast from_typ to_typ |> of_itv
     else
       v |> array_of_val |> ArrayBlk.cast_array to_typ |> flip modify_arr v
@@ -72,12 +72,12 @@ struct
 
   let add k v m =
     match Loc.typ k with
-    | Some t when Cil.isArithmeticType t -> add k (Val.itv_of_val v |> Val.of_itv) m
+    | Some t when Sparrow_cil.isArithmeticType t -> add k (Val.itv_of_val v |> Val.of_itv) m
     | _ -> add k v m
 
   let weak_add k v m =
     match Loc.typ k with
-    | Some t when Cil.isArithmeticType t -> weak_add k (Val.itv_of_val v |> Val.of_itv) m
+    | Some t when Sparrow_cil.isArithmeticType t -> weak_add k (Val.itv_of_val v |> Val.of_itv) m
     | _ -> weak_add k v m
 
   let lookup : PowLoc.t -> t -> Val.t = fun locs mem ->

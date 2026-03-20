@@ -439,18 +439,18 @@ let l_shift (x:t) (y:t) : t =
       V (Int x, Int x)
   | _ -> unknown_binary x y
 
-let itv_of_type : Cil.typ -> t = function
-  | Cil.TInt (Cil.IUChar, _) -> of_ints 0 255
-  | Cil.TInt (Cil.IUShort, _) -> of_ints 0 65535
-  | Cil.TInt (Cil.IUInt, _) | Cil.TInt (Cil.ILong, _)
-  | Cil.TInt (Cil.IULongLong, _) -> of_ints 0 4294967295
-  | Cil.TInt (Cil.IChar, _) -> of_ints (-128) 255
-  | Cil.TInt (Cil.IShort, _) -> of_ints (-32768) 32767
-  | Cil.TInt (Cil.IInt, _) | Cil.TInt (Cil.IULong, _)
-  | Cil.TInt (Cil.ILongLong, _) -> of_ints (-2147483648) 2147483648
+let itv_of_type : Sparrow_cil.typ -> t = function
+  | Sparrow_cil.TInt (Sparrow_cil.IUChar, _) -> of_ints 0 255
+  | Sparrow_cil.TInt (Sparrow_cil.IUShort, _) -> of_ints 0 65535
+  | Sparrow_cil.TInt (Sparrow_cil.IUInt, _) | Sparrow_cil.TInt (Sparrow_cil.ILong, _)
+  | Sparrow_cil.TInt (Sparrow_cil.IULongLong, _) -> of_ints 0 4294967295
+  | Sparrow_cil.TInt (Sparrow_cil.IChar, _) -> of_ints (-128) 255
+  | Sparrow_cil.TInt (Sparrow_cil.IShort, _) -> of_ints (-32768) 32767
+  | Sparrow_cil.TInt (Sparrow_cil.IInt, _) | Sparrow_cil.TInt (Sparrow_cil.IULong, _)
+  | Sparrow_cil.TInt (Sparrow_cil.ILongLong, _) -> of_ints (-2147483648) 2147483648
   | _ -> top
 
-let cast : Cil.typ -> Cil.typ -> t -> t
+let cast : Sparrow_cil.typ -> Sparrow_cil.typ -> t -> t
 = fun from_typ to_typ itv ->
   if !Options.int_overflow then
   begin
@@ -484,19 +484,19 @@ let cast : Cil.typ -> Cil.typ -> t -> t
     else itv
   end
 
-let prune : Cil.binop -> t -> t -> t = fun op x y ->
+let prune : Sparrow_cil.binop -> t -> t -> t = fun op x y ->
   if is_bot x || is_bot y then Bot else
     let pruned =
       match op, x, y with
-      | Cil.Lt, V (a, b), V (c, d) -> V (a, Integer.min b (Integer.minus d (Int 1)))
-      | Cil.Gt, V (a, b), V (c, d) -> V (Integer.max a (Integer.plus c (Int 1)), b)
-      | Cil.Le, V (a, b), V (c, d) -> V (a, Integer.min b d)
-      | Cil.Ge, V (a, b), V (c, d) -> V (Integer.max a c, b)
-      | Cil.Eq, V (a, b), V (c, d) -> meet x y
-      | Cil.Ne, V (a, b), V (c, d) when Integer.eq b c && Integer.eq c d ->
+      | Sparrow_cil.Lt, V (a, b), V (c, d) -> V (a, Integer.min b (Integer.minus d (Int 1)))
+      | Sparrow_cil.Gt, V (a, b), V (c, d) -> V (Integer.max a (Integer.plus c (Int 1)), b)
+      | Sparrow_cil.Le, V (a, b), V (c, d) -> V (a, Integer.min b d)
+      | Sparrow_cil.Ge, V (a, b), V (c, d) -> V (Integer.max a c, b)
+      | Sparrow_cil.Eq, V (a, b), V (c, d) -> meet x y
+      | Sparrow_cil.Ne, V (a, b), V (c, d) when Integer.eq b c && Integer.eq c d ->
         V (a, Integer.minus b (Int 1))
-      | Cil.Ne, V (a, b), V (c, d) when Integer.eq a c && Integer.eq c d ->
+      | Sparrow_cil.Ne, V (a, b), V (c, d) when Integer.eq a c && Integer.eq c d ->
         V (Integer.plus a (Int 1), b)
-      | Cil.Ne, V _, V _ -> x
+      | Sparrow_cil.Ne, V _, V _ -> x
       | _ -> invalid_arg "itv.ml:prune" in
     normalize pruned
