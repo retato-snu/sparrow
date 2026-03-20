@@ -25,13 +25,17 @@ eval $(opam env)
 Install the required OCaml packages. Note that `cil` is handled as a submodule, so we only install other external libraries:
 
 ```bash
-opam install dune batteries ocamlgraph apron yojson pyml ppx_compare ppx_deriving
+opam install . --deps-only --with-test
 ```
 
 > If `apron` or `pyml` fail to install, ensure that their system dependencies (`gmp`, `python`) are correctly installed and visible to opam.
 > Additionally, install the Python dependencies required for the soundness feature:
 > ```bash
 > pip install -r requirements.txt
+> ```
+> If you use OCaml5, you need to install pyml manually:
+> ```bash
+> opam install pyml --update-invariant
 > ```
 
 ## 4. Submodule Initialization
