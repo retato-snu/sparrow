@@ -357,7 +357,8 @@ let get_harmless_libs : Global.t -> lib BatSet.t
     let data = extract_feature global in
     let sparrow_bin_path = Unix.getenv "SPARROW_BIN_PATH" in
     let sparrow_data_path = Unix.getenv "SPARROW_DATA_PATH" in
-    Py.initialize ();
+    let library_name = Sys.getenv_opt "PYML_LIBRARY" in
+    if not (Py.is_initialized ()) then Py.initialize ?library_name ~verbose:!Options.debug ();
     let sys = Py.import "sys" in
     let _ = Py.Module.get sys "path" |> (fun p -> Py.Object.call_method p "append" [| Py.String.of_string sparrow_bin_path |]) in
     let py_module = Py.import "harmless_unsoundness" in

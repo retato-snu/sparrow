@@ -29,6 +29,10 @@ opam install dune batteries ocamlgraph apron yojson pyml ppx_compare ppx_derivin
 ```
 
 > If `apron` or `pyml` fail to install, ensure that their system dependencies (`gmp`, `python`) are correctly installed and visible to opam.
+> Additionally, install the Python dependencies required for the soundness feature:
+> ```bash
+> pip install -r requirements.txt
+> ```
 
 ## 4. Submodule Initialization
 
@@ -57,6 +61,18 @@ The Sparrow binary is located at `_build/default/src/main.exe`. You can run it o
 ```bash
 _build/default/src/main.exe [options] source-files
 ```
+
+### Unsound Feature
+
+If you want to use unsound feature, implmented with python, you need to set `PYML_LIBRARY`, `SPARROW_BIN_PATH` and `SPARROW_DATA_PATH` environment variables.
+
+```bash
+PYML_LIBRARY=/path/to/python/lib/python3.*.dylib \
+SPARROW_BIN_PATH=$(pwd)/bin \
+SPARROW_DATA_PATH=$(pwd)/etc \
+dune exec src/main.exe -- -bugfinder 2 test/test.c
+```
+
 
 ### Common Parameters
 

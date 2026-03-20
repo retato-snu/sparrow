@@ -26,8 +26,8 @@ def mkTrSet(fname):
     for line in lines:
         feat = []
         tokens = re.split(r' |\t|\n', line)
-        tokens = filter(lambda x: x.strip() != '', tokens)
-        if int(tokens[len(tokens) - 1]) == 1:
+        tokens = list(filter(lambda x: x.strip() != '', tokens))
+        if tokens and int(tokens[len(tokens) - 1]) == 1:
             tokens = tokens[1:len(tokens) - 1]
             for b in tokens:
                 feat.append(float(b))
@@ -43,8 +43,8 @@ def doOCSVM(trset):
 
 
 def training():
-    loop_training = sparrow_data_path + "/unsound_loop.dat"
-    lib_training = sparrow_data_path + "/data/unsound_lib.dat"
+    loop_training = os.path.join(sparrow_data_path, "unsound_loop.dat")
+    lib_training = os.path.join(sparrow_data_path, "unsound_lib.dat")
     loop_trset = mkTrSet(loop_training)
     lib_trset = mkTrSet(lib_training)
     clf_loop = doOCSVM(loop_trset)
@@ -74,8 +74,8 @@ def load(name):
 
 def main(argv):
     (clf_loop, clf_lib) = training()
-    store(clf_loop, sparrow_data_path + "harmless_loop_clf")
-    store(clf_lib, sparrow_data_path + "harmless_lib_clf")
+    store(clf_loop, os.path.join(sparrow_data_path, "harmless_loop_clf"))
+    store(clf_lib, os.path.join(sparrow_data_path, "harmless_lib_clf"))
 
 
 if __name__ == "__main__":
