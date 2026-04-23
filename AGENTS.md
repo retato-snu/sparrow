@@ -1,9 +1,9 @@
 ---
 name: sparrow agent guide
-description: Local operational guide for the OCaml baseline analyzer. Frozen reference per P-7; no new analyzer semantics land here.
+description: Local operational guide for the OCaml baseline analyzer. Frozen reference per O-4; no new analyzer semantics land here.
 audience: contributor / agent
 status: active
-last-reviewed: 2026-04-22
+last-reviewed: 2026-04-23
 ---
 
 # sparrow
@@ -17,7 +17,7 @@ architecture map live in `../Doc/OPERATIONS.md`.
 | Need                                | Read                                  |
 |-------------------------------------|---------------------------------------|
 | Baseline analyzer role              | `../Doc/OPERATIONS.md` §1.1           |
-| Modification scope                  | `../Doc/FOUNDATIONS.md` P-7           |
+| Modification scope                  | `../Doc/FOUNDATIONS.md` O-4           |
 
 ## Commands
 
@@ -29,7 +29,7 @@ architecture map live in `../Doc/OPERATIONS.md`.
 ## Local conventions
 
 - Analyzer semantic changes do not land here. See
-  `../Doc/FOUNDATIONS.md` P-7 for the modification scope and for the
+  `../Doc/FOUNDATIONS.md` O-4 for the modification scope and for the
   narrow carve-out covering baseline version updates.
 - `src/domain/` is the OCaml-side canonical mathematical domain model.
   When the Scala backend cross-references domain behavior against the
