@@ -31,6 +31,8 @@ architecture map live in `../Doc/OPERATIONS.md`.
 - Analyzer semantic changes do not land here. See
   `../Doc/FOUNDATIONS.md` O-4 for the modification scope and for the
   narrow carve-out covering baseline version updates.
+- OCaml modular implementation work belongs in
+  `../sparrow-modular-ocaml/`, not in this frozen baseline directory.
 - `src/domain/` is the OCaml-side canonical mathematical domain model.
-  When the Scala backend cross-references domain behavior against the
-  baseline, this is the authoritative OCaml source.
+  When modular implementations cross-reference domain behavior against
+  the baseline, this is the authoritative OCaml source.
