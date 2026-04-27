@@ -3,7 +3,7 @@ name: sparrow agent guide
 description: Local operational guide for the OCaml baseline analyzer. Frozen reference per O-4; no new analyzer semantics land here.
 audience: contributor / agent
 status: active
-last-reviewed: 2026-04-23
+last-reviewed: 2026-04-27
 ---
 
 # sparrow
