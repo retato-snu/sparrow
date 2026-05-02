@@ -24,6 +24,7 @@ sig
   val succ              : node -> t -> node list
   val pred              : node -> t -> node list
 
+  val add_node          : node -> t -> t
   val add_edge          : node -> node -> t -> t
   val remove_node       : node -> t -> t
   val get_abslocs       : node -> node -> t -> PowLoc.t

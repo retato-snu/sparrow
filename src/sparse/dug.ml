@@ -31,6 +31,7 @@ sig
   val succ              : node -> t -> node list
   val pred              : node -> t -> node list
 
+  val add_node          : node -> t -> t
   val add_edge          : node -> node -> t -> t
   val remove_node       : node -> t -> t
   val get_abslocs       : node -> node -> t -> PowLoc.t
@@ -73,6 +74,7 @@ struct
     let iter_edges f g = I.iter_edges f g.graph
     let fold_succ f g a = I.fold_succ f g.graph a
 
+    let add_vertex g n = I.add_vertex g.graph n; g
     let remove_vertex g n = I.remove_vertex g.graph n; g
     let add_edge g s d = I.add_edge g.graph s d; g
     let add_edge_e g (s,locs,d) =
@@ -101,6 +103,9 @@ struct
 
   let remove_node : node -> t -> t
   =fun n dug -> G.remove_vertex dug n
+
+  let add_node : node -> t -> t
+  =fun n dug -> G.add_vertex dug n
 
   let add_edge : node -> node -> t -> t
   =fun src dst dug -> G.add_edge dug src dst
