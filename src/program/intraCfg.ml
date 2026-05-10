@@ -836,8 +836,22 @@ let generate_global_proc : Sparrow_cil.global list -> Sparrow_cil.fundec -> t
   let (term, g) =
     List.fold_left (fun (node, g) x ->
         match x with
-          Sparrow_cil.GVar (var, init, loc) ->
+          Sparrow_cil.GVar (var, init, loc)
+          when var.vstorage = Sparrow_cil.Extern && init.init = None ->
+          (* [extern int x;] is a declaration only.  It does not define
+             storage and must not be lowered to [x = 0].  CIL normally
+             represents this form as [GVarDecl], but keep the guard here so
+             the global-initializer CFG policy is storage-based rather than
+             constructor-accidental.  [extern int x = 5;] is a definition and
+             continues through [process_gvar]. *)
+          (node, g)
+        | Sparrow_cil.GVar (var, init, loc) ->
           process_gvar fd (Sparrow_cil.var var) init loc node g
+        | Sparrow_cil.GVarDecl (var, _loc)
+          when var.vstorage = Sparrow_cil.Extern ->
+          (* Declaration-only externs are metadata for module dependency
+             tracking, not executable global initialization. *)
+          (node, g)
         | Sparrow_cil.GVarDecl (var, loc) -> process_gvardecl fd (Sparrow_cil.var var) loc node g
         | Sparrow_cil.GFun (fundec, loc) -> process_fundecl fd fundec loc node g
         | _ -> (node, g)) (entry, empty fd) globals
