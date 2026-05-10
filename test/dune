@@ -2,6 +2,11 @@
  (name test)
  (libraries sparrow_lib unix str))
 
+(executable
+ (name real_frontend_global_observer)
+ (libraries sparrow_lib unix yojson)
+ (flags :standard -w -7-27-32-33-34-38-39))
+
 (rule
  (alias runtest)
  (action (run ./test.exe %{exe:../src/main.exe})))
