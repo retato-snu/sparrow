@@ -16,4 +16,4 @@
   pyml
   ppx_compare
   ppx_deriving
-  goblint-cil))
+  (goblint-cil (>= 2.0.9))))
