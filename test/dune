@@ -12,6 +12,11 @@
  (libraries sparrow_lib unix yojson)
  (flags :standard -w -7-27-32-33-34-38-39))
 
+(executable
+ (name real_access_dug_observer)
+ (libraries sparrow_lib unix yojson)
+ (flags :standard -w -7-27-32-33-34-38-39))
+
 (rule
  (alias runtest)
  (action (run ./test.exe %{exe:../src/main.exe})))
