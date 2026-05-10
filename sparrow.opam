@@ -29,3 +29,6 @@ build: [
     "@doc" {with-doc}
   ]
 ]
+pin-depends: [
+  [ "goblint-cil.dev" "git+https://github.com/retato-snu/cil.git#json" ]
+]
