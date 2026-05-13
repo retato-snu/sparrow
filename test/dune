@@ -2,6 +2,14 @@
  (name test)
  (libraries sparrow_lib unix str))
 
+(executable
+ (name oracle_dump_smoke)
+ (libraries unix yojson))
+
 (rule
  (alias runtest)
  (action (run ./test.exe %{exe:../src/main.exe})))
+
+(rule
+ (alias runtest)
+ (action (run ./oracle_dump_smoke.exe %{exe:../src/oracle_dump.exe} %{dep:test.c})))
