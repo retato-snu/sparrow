@@ -1,6 +1,6 @@
 ---
 name: sparrow agent guide
-description: Local operational guide for the OCaml baseline analyzer. Frozen reference per O-4; no new analyzer semantics land here.
+description: Local operational guide for the OCaml Sparrow analyzer and oracle dump path.
 audience: contributor / agent
 status: active
 last-reviewed: 2026-04-27
@@ -8,16 +8,18 @@ last-reviewed: 2026-04-27
 
 # sparrow
 
-This file contains local operational guidance only. Project principles
-live in `../Doc/FOUNDATIONS.md`; process, precedence, and the
-architecture map live in `../Doc/OPERATIONS.md`.
+This file contains local operational guidance for the original Sparrow
+analyzer. For the exact PE workspace, this directory is both the semantic
+authority and the place where deterministic oracle dump/logging support
+may be added.
 
 ## Local role
 
 | Need                                | Read                                  |
 |-------------------------------------|---------------------------------------|
-| Baseline analyzer role              | `../Doc/OPERATIONS.md` §1.1           |
-| Modification scope                  | `../Doc/FOUNDATIONS.md` O-4           |
+| Exact PE target and module/link pipeline | `../sparrow-exact-pe/Doc/PLAN.md` |
+| Oracle dump requirements            | `../sparrow-exact-pe/Doc/ORACLE_REPORT.md` |
+| C-fixture acceptance discipline     | `../sparrow-exact-pe/Doc/ABSTRACT_STATE_SCENARIO_COVERAGE.md` |
 
 ## Commands
 
@@ -28,11 +30,17 @@ architecture map live in `../Doc/OPERATIONS.md`.
 
 ## Local conventions
 
-- Analyzer semantic changes do not land here. See
-  `../Doc/FOUNDATIONS.md` O-4 for the modification scope and for the
-  narrow carve-out covering baseline version updates.
-- OCaml modular implementation work belongs in
-  `../sparrow-modular-ocaml/`, not in this frozen baseline directory.
+- Analyzer semantic changes do not land here for the PE workspace.
+  Transfer functions, abstract domains, fixpoint behavior, parser
+  semantics, and option semantics are the oracle being compared against.
+- Logging, deterministic structured dumps, stable identity printing, and
+  command-line oracle output may be added here when required by
+  `../sparrow-exact-pe/Doc/ORACLE_REPORT.md`.
+- Oracle dump code must be observer-only with respect to analyzer state:
+  dump-local numbering or memoization is allowed, but changing transfer
+  results, abstract memories, analysis options, or `Global.dump` is not.
+- Exact PE implementation work belongs in `../sparrow-exact-pe/`; this
+  directory supplies the original semantics and oracle dump executable.
 - `src/domain/` is the OCaml-side canonical mathematical domain model.
   When modular implementations cross-reference domain behavior against
   the baseline, this is the authoritative OCaml source.
