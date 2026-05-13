@@ -13,28 +13,7 @@ open Sparrow_cil
 open Global
 open Vocab
 
-(* transformation based on syntactic heuristics *)
-let transform_simple file =
-  opt !Options.unsound_alloc UnsoundAlloc.transform file
-
-(* transformation based on semantic heuristics *)
-let transform : Global.t -> Global.t
-= fun global ->
-  let loop_transformed = UnsoundLoop.transform global in
-  let inlined = Frontend.inline global in
-  if not !Options.il && (loop_transformed || inlined) then   (* something transformed *)
-    Frontend.makeCFGinfo global.file    (* NOTE: CFG must be re-computed after transformation *)
-    |> StepManager.stepf true "Translation to graphs (after inline)" Global.init
-    |> StepManager.stepf true "Pre-analysis (after inline)" PreAnalysis.perform
-  else global (* nothing changed *)
-
-let init_analysis : Sparrow_cil.file -> Global.t
-= fun file ->
-  file
-  |> transform_simple
-  |> StepManager.stepf true "Translation to graphs" Global.init
-  |> StepManager.stepf true "Pre-analysis" PreAnalysis.perform
-  |> transform
+let init_analysis = SparrowPipeline.pre_result
 
 let print_pgm_info : Global.t -> Global.t
 = fun global ->
@@ -46,7 +25,7 @@ let print_pgm_info : Global.t -> Global.t
 
 let print_il file =
   (if !Options.inline = [] && BatSet.is_empty !Options.unsound_loop then
-    Sparrow_cil.dumpFile !Sparrow_cil.printerForMaincil stdout "" (transform_simple file)
+    Sparrow_cil.dumpFile !Sparrow_cil.printerForMaincil stdout "" (SparrowPipeline.transform_simple file)
   else
     let global = init_analysis file in
     Sparrow_cil.dumpFile !Sparrow_cil.printerForMaincil stdout "" global.file);

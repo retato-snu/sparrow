@@ -11,12 +11,12 @@
     gmp apron apron.octMPQ ocamlgraph yojson pyml threads str unix num)
  (preprocess (pps ppx_compare ppx_deriving.std))
  (flags :standard -w -7-27-32-33-34-38-39)
- (modules (:standard \ main vis))
+ (modules (:standard \ main vis oracle_dump))
  (modules_without_implementation absDom absSem))
 
 (executables
- (names main vis)
- (public_names sparrow sparrow-vis)
+ (names main vis oracle_dump)
+ (public_names sparrow sparrow-vis sparrow-oracle-dump)
  (libraries sparrow_lib findlib findlib.internal findlib.dynload dynlink)
  (flags :standard -w -7-27-32-33-34-38-39)
- (modules main vis))
+ (modules main vis oracle_dump))
