@@ -29,6 +29,13 @@ module Node = struct
   let exit = EXIT
 
   let nid = ref 0
+  let initial_id = !nid
+
+  let get_initial_id () = initial_id
+
+  let get_next_id () = !nid
+
+  let set_next_id value = nid := value
 
   let fromCilStmt : Sparrow_cil.stmt -> t
   =fun s ->
