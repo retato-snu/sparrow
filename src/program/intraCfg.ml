@@ -849,6 +849,15 @@ let generate_global_proc : Sparrow_cil.global list -> Sparrow_cil.fundec -> t
         | Sparrow_cil.GFun (fundec, loc) -> process_fundecl fd fundec loc node g
         | _ -> (node, g)) (entry, empty fd) globals
   in
+  let finish g =
+    g
+    |> generate_assumes
+    |> flatten_instructions
+    |> remove_if_loop
+    |> transform_string_allocs fd        (* generate salloc (string alloc) cmds *)
+    |> remove_empty_nodes
+    |> insert_return_nodes
+  in
   let (main_dec, main_loc) =
     match get_main_dec globals with
     | Some (d, l) -> (d, l)
@@ -860,10 +869,26 @@ let generate_global_proc : Sparrow_cil.global list -> Sparrow_cil.fundec -> t
   |> add_cmd call_node call_cmd
   |> add_edge term call_node
   |> add_edge call_node Node.EXIT
+  |> finish
+
+let generate_module_global_proc : Sparrow_cil.global list -> Sparrow_cil.fundec -> t
+= fun globals fd ->
+  let entry = Node.ENTRY in
+  let (term, g) =
+    List.fold_left (fun (node, g) x ->
+        match x with
+          Sparrow_cil.GVar (var, init, loc) ->
+          process_gvar fd (Sparrow_cil.var var) init loc node g
+        | Sparrow_cil.GVarDecl (var, loc) -> process_gvardecl fd (Sparrow_cil.var var) loc node g
+        | Sparrow_cil.GFun (fundec, loc) -> process_fundecl fd fundec loc node g
+        | _ -> (node, g)) (entry, empty fd) globals
+  in
+  g
+  |> add_edge term Node.EXIT
   |> generate_assumes
   |> flatten_instructions
   |> remove_if_loop
-  |> transform_string_allocs fd        (* generate salloc (string alloc) cmds *)
+  |> transform_string_allocs fd
   |> remove_empty_nodes
   |> insert_return_nodes
 

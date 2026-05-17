@@ -53,6 +53,8 @@ and node = Node.t
 and cmd = Cmd.t
 
 val init : Sparrow_cil.fundec -> Sparrow_cil.location -> t
+val generate_module_global_proc :
+  Sparrow_cil.global list -> Sparrow_cil.fundec -> t
 val generate_global_proc : Sparrow_cil.global list -> Sparrow_cil.fundec -> t
 
 val get_pid : t -> string
