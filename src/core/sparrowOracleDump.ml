@@ -12,11 +12,12 @@ open Yojson.Safe
 open Sparrow_cil
 open BasicDom
 
-type stage = FrontEnd | Pre
+type stage = FrontEnd | Pre | Sparse
 
 let string_of_stage = function
   | FrontEnd -> "front_end"
   | Pre -> "pre"
+  | Sparse -> "sparse"
 
 let assoc xs = `Assoc xs
 let list xs = `List xs
@@ -814,6 +815,122 @@ let to_json stage files global =
     ("identities", identities global);
     ("global", json_global global);
   ]
+
+(* Modules for sparse analysis intermediate structures *)
+module MyAccessSem = AccessSem.Make(ItvSem)
+module MyAccessAnalysis = AccessAnalysis.Make(MyAccessSem)
+module MyDUGraph = Dug.Make(ItvDom.Mem)
+module MySsaDug = SsaDug.Make(MyDUGraph)(MyAccessAnalysis.Access)
+module MyWorklist = Worklist.Make(MyDUGraph)
+
+let json_of_locset locs =
+  let loc_strs = PowLoc.fold (fun loc acc ->
+    (Loc.to_string loc) :: acc
+  ) locs [] in
+  let sorted = List.sort String.compare loc_strs in
+  list (List.map str sorted)
+
+let json_of_access access =
+  let entries = MyAccessAnalysis.Access.fold (fun node info acc ->
+    let node_str = node_id node in
+    let use_locs = MyAccessAnalysis.Access.Info.useof info in
+    let def_locs = MyAccessAnalysis.Access.Info.defof info in
+    let entry = assoc [
+      ("use", json_of_locset use_locs);
+      ("def", json_of_locset def_locs);
+    ] in
+    (node_str, entry) :: acc
+  ) access [] in
+  let sorted = List.sort (fun (a, _) (b, _) -> String.compare a b) entries in
+  assoc sorted
+
+let json_of_dug dug =
+  let nodes = MyDUGraph.fold_node (fun v acc ->
+    (node_id v) :: acc
+  ) dug [] in
+  let sorted_nodes = List.sort String.compare nodes in
+
+  let edges = MyDUGraph.fold_edges (fun src dst acc ->
+    let locs = MyDUGraph.get_abslocs src dst dug in
+    let loc_strs = PowLoc.fold (fun loc acc ->
+      (Loc.to_string loc) :: acc
+    ) locs [] in
+    let sorted_locs = List.sort String.compare loc_strs in
+    let edge = assoc [
+      ("src", str (node_id src));
+      ("dst", str (node_id dst));
+      ("locs", list (List.map str sorted_locs));
+    ] in
+    edge :: acc
+  ) dug [] in
+  let sorted_edges = List.sort (fun a b ->
+    let get_field key j = match j with
+      | `Assoc l -> (match List.assoc key l with `String s -> s | _ -> "")
+      | _ -> "" in
+    let cmp = String.compare (get_field "src" a) (get_field "src" b) in
+    if cmp <> 0 then cmp
+    else String.compare (get_field "dst" a) (get_field "dst" b)
+  ) edges in
+
+  assoc [
+    ("nodes", list (List.map str sorted_nodes));
+    ("edges", list sorted_edges);
+    ("node_count", int (List.length sorted_nodes));
+    ("edge_count", int (List.length sorted_edges));
+  ]
+
+let json_of_worklist_info worklist dug =
+  let loop_headers = MyDUGraph.fold_node (fun n acc ->
+    if MyWorklist.is_loopheader n worklist then
+      (node_id n) :: acc
+    else acc
+  ) dug [] in
+  let sorted = List.sort String.compare loop_headers in
+  assoc [
+    ("loop_headers", list (List.map str sorted));
+  ]
+
+let to_json_sparse files global inputof outputof access dug worklist locset locset_fs =
+  let sparse_json = assoc [
+    ("locset", json_of_locset locset);
+    ("locset_fs", json_of_locset locset_fs);
+    ("access", json_of_access access);
+    ("dug", json_of_dug dug);
+    ("worklist", json_of_worklist_info worklist dug);
+    ("inputof", table inputof);
+    ("outputof", table outputof);
+  ] in
+  assoc [
+    ("schema", str "sparrow.oracle.v1");
+    ("stage", str (string_of_stage Sparse));
+    ("metadata", metadata files);
+    ("identities", identities global);
+    ("global", json_global global);
+    ("sparse", sparse_json);
+  ]
+
+let write_sparse path files global =
+  let (global_anal, inputof, outputof, _) = ItvAnalysis.do_analysis global in
+  let locset = ItvAnalysis.get_locset global.Global.mem in
+  let locset_fs = PartialFlowSensitivity.select global locset in
+  let spec = { ItvSem.Spec.empty with
+    ItvSem.Spec.locset; locset_fs; premem = global.Global.mem;
+    ItvSem.Spec.unsound_lib = UnsoundLib.collect global;
+    unsound_update = (!Options.bugfinder >= 2);
+    unsound_bitwise = (!Options.bugfinder >= 1);
+  } in
+  let access = MyAccessAnalysis.perform global locset (ItvSem.run AbsSem.Strong spec) global.Global.mem in
+  let dug = MySsaDug.make (global, access, locset_fs) in
+  let worklist = MyWorklist.init dug in
+  let chan = open_out path in
+  try
+    to_json_sparse files global_anal inputof outputof access dug worklist locset locset_fs
+    |> Yojson.Safe.pretty_to_channel chan;
+    output_char chan '\n';
+    close_out chan
+  with exn ->
+    close_out_noerr chan;
+    raise exn
 
 let write path stage files global =
   let chan = open_out path in

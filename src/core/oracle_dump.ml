@@ -35,13 +35,14 @@ let reject_non_oracle_options () =
 let parse_stage = function
   | "front_end" -> SparrowOracleDump.FrontEnd
   | "pre" -> SparrowOracleDump.Pre
+  | "sparse" -> SparrowOracleDump.Sparse
   | stage -> fail_usage ("unsupported stage: " ^ stage)
 
 let main () =
   reject_non_oracle_options ();
   let stage = ref None in
   let out = ref None in
-  let usage = "Usage: sparrow-oracle-dump --stage front_end|pre --out oracle.json source-files" in
+  let usage = "Usage: sparrow-oracle-dump --stage front_end|pre|sparse --out oracle.json source-files" in
   let specs = [
     ("--stage", Arg.String (fun s -> stage := Some (parse_stage s)), "Oracle stage");
     ("--out", Arg.String (fun s -> out := Some s), "Output oracle JSON path");
@@ -61,12 +62,17 @@ let main () =
   let global =
     match stage with
     | SparrowOracleDump.FrontEnd -> SparrowPipeline.front_end_input ()
-    | SparrowOracleDump.Pre ->
+    | SparrowOracleDump.Pre
+    | SparrowOracleDump.Sparse ->
       StepManager.stepf true "Front-end" Frontend.parse ()
       |> Frontend.makeCFGinfo
       |> SparrowPipeline.pre_result
   in
-  SparrowOracleDump.write out stage !Frontend.files global
+  match stage with
+  | SparrowOracleDump.Sparse ->
+    SparrowOracleDump.write_sparse out !Frontend.files global
+  | _ ->
+    SparrowOracleDump.write out stage !Frontend.files global
 
 let _ =
   try main () with exc ->
