@@ -17,11 +17,23 @@ module type S =
 sig
   module DUGraph : Dug.S
   type t
+  type order_entry = {
+    node : BasicDom.Node.t;
+    order : int;
+    loop_header : bool;
+    head_order : int option;
+  }
+  type snapshot = {
+    order : order_entry list;
+    sccs : BasicDom.Node.t list list;
+    loop_headers : BasicDom.Node.t list;
+  }
   val init : DUGraph.t -> t
   val pick : t -> (BasicDom.Node.t * t) option
   val push : BasicDom.Node.t -> BasicDom.Node.t -> t -> t
   val push_set : BasicDom.Node.t -> BasicDom.Node.t BatSet.t -> t -> t
   val is_loopheader : BasicDom.Node.t -> t -> bool
+  val snapshot : t -> snapshot
 end
 
 module NGraph = struct
@@ -45,13 +57,15 @@ module Make (DUGraph : Dug.S) = struct
     type t = {
       order : (DUGraph.node, int * bool) BatMap.t;
       headorder: (DUGraph.node, int) BatMap.t;
-      loopheads : DUGraph.node BatSet.t
+      loopheads : DUGraph.node BatSet.t;
+      sccs : DUGraph.node list list
     }
 
     let empty = {
       order = BatMap.empty;
       headorder = BatMap.empty;
-      loopheads = BatSet.empty
+      loopheads = BatSet.empty;
+      sccs = []
     }
 
     let make : DUGraph.t -> NGraph.t * (int, DUGraph.node) BatMap.t
@@ -177,9 +191,22 @@ module Make (DUGraph : Dug.S) = struct
       let wo = trans_map trans_k (fun k v -> (v, BatSet.mem k lhs)) wo in
       let lhs = trans_set (fun v -> BatMap.find v i2n) lhs in
       let ho = trans_map trans_k (fun _ v -> v) ho in
+      let sccs = List.map (List.map trans_k) sccs in
       Profiler.finish_event "Worklist.trans";
-      { order = wo; headorder = ho; loopheads = lhs }
+      { order = wo; headorder = ho; loopheads = lhs; sccs }
   end
+
+  type order_entry = {
+    node : BasicDom.Node.t;
+    order : int;
+    loop_header : bool;
+    head_order : int option;
+  }
+  type snapshot = {
+    order : order_entry list;
+    sccs : BasicDom.Node.t list list;
+    loop_headers : BasicDom.Node.t list;
+  }
 
   module Ord = struct
     type t = workorder * DUGraph.node
@@ -235,6 +262,27 @@ module Make (DUGraph : Dug.S) = struct
   let init dug = { set = S.empty; order = Workorder.perform dug }
 
   let is_loopheader idx ws = Workorder.is_loopheader idx ws.order
+
+  let snapshot ws =
+    let order =
+      BatMap.foldi (fun node (order, loop_header) acc ->
+        let head_order =
+          try Some (BatMap.find node ws.order.Workorder.headorder)
+          with Not_found -> None
+        in
+        { node; order; loop_header; head_order } :: acc
+      ) ws.order.Workorder.order []
+      |> List.sort (fun (a : order_entry) (b : order_entry) ->
+        let cmp = compare a.order b.order in
+        if cmp <> 0 then cmp else Node.compare a.node b.node)
+    in
+    let sccs =
+      List.map (List.sort Node.compare) ws.order.Workorder.sccs
+    in
+    let loop_headers =
+      BatSet.elements ws.order.Workorder.loopheads |> List.sort Node.compare
+    in
+    { order; sccs; loop_headers }
 
   let pick ws =
     try

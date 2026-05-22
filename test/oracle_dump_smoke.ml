@@ -131,10 +131,45 @@ let check_pre_shape global =
   require_object "$.global.callgraph" (require_field "$.global" "callgraph" global);
   require_list "$.global.dump" (require_field "$.global" "dump" global)
 
+let check_sparse_shape json global =
+  check_pre_shape global;
+  require_list "$.inputof" (require_field "$" "inputof" json);
+  require_list "$.outputof" (require_field "$" "outputof" json);
+  let sparse = require_field "$" "sparse" json in
+  let locsets = require_field "$.sparse" "locsets" sparse in
+  require_object "$.sparse.locsets" locsets;
+  require_list "$.sparse.locsets.all"
+    (require_field "$.sparse.locsets" "all" locsets);
+  require_list "$.sparse.locsets.flow_sensitive"
+    (require_field "$.sparse.locsets" "flow_sensitive" locsets);
+  require_list "$.sparse.locset" (require_field "$.sparse" "locset" sparse);
+  require_list "$.sparse.locset_fs"
+    (require_field "$.sparse" "locset_fs" sparse);
+  require_object "$.sparse.access"
+    (require_field "$.sparse" "access" sparse);
+  let dug = require_field "$.sparse" "dug" sparse in
+  require_object "$.sparse.dug" dug;
+  require_list "$.sparse.dug.nodes"
+    (require_field "$.sparse.dug" "nodes" dug);
+  require_list "$.sparse.dug.edges"
+    (require_field "$.sparse.dug" "edges" dug);
+  let worklist = require_field "$.sparse" "worklist" sparse in
+  require_object "$.sparse.worklist" worklist;
+  require_list "$.sparse.worklist.order"
+    (require_field "$.sparse.worklist" "order" worklist);
+  require_list "$.sparse.worklist.scc_order"
+    (require_field "$.sparse.worklist" "scc_order" worklist);
+  require_list "$.sparse.worklist.loop_headers"
+    (require_field "$.sparse.worklist" "loop_headers" worklist);
+  require_object "$.sparse.callgraph"
+    (require_field "$.sparse" "callgraph" sparse);
+  require_list "$.sparse.dump" (require_field "$.sparse" "dump" sparse)
+
 let check_shape stage path =
   let json = Yojson.Safe.from_file path in
   let global = check_common_shape stage json in
   if stage = "pre" then check_pre_shape global
+  else if stage = "sparse" then check_sparse_shape json global
 
 let cleanup_dir dir =
   Sys.readdir dir
@@ -159,6 +194,10 @@ let main () =
   let pre2 = run_oracle tmp_dir oracle_exe source "pre" 2 in
   run_cmp pre1 pre2;
   check_shape "pre" pre1;
+  let sparse1 = run_oracle tmp_dir oracle_exe source "sparse" 1 in
+  let sparse2 = run_oracle tmp_dir oracle_exe source "sparse" 2 in
+  run_cmp sparse1 sparse2;
+  check_shape "sparse" sparse1;
   cleanup_dir tmp_dir;
   print_endline "oracle_dump_smoke.....PASS"
 

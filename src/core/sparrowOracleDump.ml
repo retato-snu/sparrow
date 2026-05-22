@@ -757,10 +757,14 @@ let global_types g acc =
     List.fold_left (fun acc vi -> vi.vtype :: acc) acc (fd.sformals @ fd.slocals)
   | GAsm _ | GPragma _ | GText _ -> acc
 
-let identities global =
+let identities ?(extra_locs = []) global =
   let pids = InterCfg.pidsof global.Global.icfg |> sorted_procs in
   let nodes = InterCfg.nodesof global.Global.icfg |> sorted_nodes in
-  let locs = locs_of_global global in
+  let locs =
+    locs_of_global global @ extra_locs
+    |> List.sort Loc.compare
+    |> uniq_sorted Loc.compare
+  in
   let types =
     List.fold_left (fun acc g -> global_types g acc) [] global.Global.file.globals
     |> fun acc -> List.fold_left (fun acc loc -> loc_types loc acc) acc locs
@@ -823,89 +827,237 @@ module MyDUGraph = Dug.Make(ItvDom.Mem)
 module MySsaDug = SsaDug.Make(MyDUGraph)(MyAccessAnalysis.Access)
 module MyWorklist = Worklist.Make(MyDUGraph)
 
+let loc_id_string_list locs =
+  locs |> List.map loc_id |> sorted_strings
+
+let json_of_loc_list locs =
+  loc_id_string_list locs |> List.map str |> list
+
 let json_of_locset locs =
-  let loc_strs = PowLoc.fold (fun loc acc ->
-    (Loc.to_string loc) :: acc
-  ) locs [] in
-  let sorted = List.sort String.compare loc_strs in
-  list (List.map str sorted)
+  PowLoc.elements locs |> json_of_loc_list
 
-let json_of_access access =
-  let entries = MyAccessAnalysis.Access.fold (fun node info acc ->
-    let node_str = node_id node in
-    let use_locs = MyAccessAnalysis.Access.Info.useof info in
-    let def_locs = MyAccessAnalysis.Access.Info.defof info in
-    let entry = assoc [
-      ("use", json_of_locset use_locs);
-      ("def", json_of_locset def_locs);
-    ] in
-    (node_str, entry) :: acc
-  ) access [] in
-  let sorted = List.sort (fun (a, _) (b, _) -> String.compare a b) entries in
-  assoc sorted
+let json_of_nodes nodes =
+  nodes
+  |> List.sort InterCfg.Node.compare
+  |> List.map node_id
+  |> List.map str
+  |> list
 
-let json_of_dug dug =
-  let nodes = MyDUGraph.fold_node (fun v acc ->
-    (node_id v) :: acc
-  ) dug [] in
-  let sorted_nodes = List.sort String.compare nodes in
+let json_of_pownode nodes =
+  PowNode.elements nodes |> json_of_nodes
 
-  let edges = MyDUGraph.fold_edges (fun src dst acc ->
-    let locs = MyDUGraph.get_abslocs src dst dug in
-    let loc_strs = PowLoc.fold (fun loc acc ->
-      (Loc.to_string loc) :: acc
-    ) locs [] in
-    let sorted_locs = List.sort String.compare loc_strs in
-    let edge = assoc [
-      ("src", str (node_id src));
-      ("dst", str (node_id dst));
-      ("locs", list (List.map str sorted_locs));
-    ] in
-    edge :: acc
-  ) dug [] in
-  let sorted_edges = List.sort (fun a b ->
-    let get_field key j = match j with
-      | `Assoc l -> (match List.assoc key l with `String s -> s | _ -> "")
-      | _ -> "" in
-    let cmp = String.compare (get_field "src" a) (get_field "src" b) in
-    if cmp <> 0 then cmp
-    else String.compare (get_field "dst" a) (get_field "dst" b)
-  ) edges in
-
+let json_of_access_info info =
+  let use_locs = MyAccessAnalysis.Access.Info.useof info in
+  let def_locs = MyAccessAnalysis.Access.Info.defof info in
   assoc [
-    ("nodes", list (List.map str sorted_nodes));
-    ("edges", list sorted_edges);
-    ("node_count", int (List.length sorted_nodes));
-    ("edge_count", int (List.length sorted_edges));
+    ("use", json_of_locset use_locs);
+    ("def", json_of_locset def_locs);
+    ("all", json_of_locset (PowLoc.union use_locs def_locs));
   ]
 
-let json_of_worklist_info worklist dug =
-  let loop_headers = MyDUGraph.fold_node (fun n acc ->
-    if MyWorklist.is_loopheader n worklist then
-      (node_id n) :: acc
-    else acc
-  ) dug [] in
-  let sorted = List.sort String.compare loop_headers in
+let json_of_access global access =
+  let node_entries =
+    MyAccessAnalysis.Access.fold (fun node info acc ->
+      (node, info) :: acc
+    ) access []
+    |> List.sort (fun (n1, _) (n2, _) -> InterCfg.Node.compare n1 n2)
+  in
+  let by_node =
+    node_entries
+    |> List.map (fun (node, info) -> (node_id node, json_of_access_info info))
+    |> assoc
+  in
+  let nodes =
+    node_entries
+    |> List.map (fun (node, info) ->
+      assoc [
+        ("node", str (node_id node));
+        ("procedure", str (InterCfg.Node.get_pid node));
+        ("use", json_of_locset (MyAccessAnalysis.Access.Info.useof info));
+        ("def", json_of_locset (MyAccessAnalysis.Access.Info.defof info));
+      ])
+    |> list
+  in
+  let procedures =
+    InterCfg.pidsof global.Global.icfg
+    |> sorted_procs
+    |> List.map (fun pid ->
+      assoc [
+        ("procedure", str pid);
+        ("direct", json_of_access_info (MyAccessAnalysis.Access.find_proc pid access));
+        ("reachable", json_of_access_info (MyAccessAnalysis.Access.find_proc_reach pid access));
+        ("reachable_without_local",
+          json_of_access_info (MyAccessAnalysis.Access.find_proc_reach_wo_local pid access));
+        ("local", json_of_locset (MyAccessAnalysis.Access.find_proc_local pid access));
+      ])
+    |> list
+  in
+  let loc_node_entries find =
+    MyAccessAnalysis.Access.total_abslocs access
+    |> PowLoc.elements
+    |> List.sort Loc.compare
+    |> List.map (fun loc ->
+      assoc [
+        ("location", str (loc_id loc));
+        ("nodes", json_of_pownode (find loc access));
+      ])
+    |> list
+  in
   assoc [
-    ("loop_headers", list (List.map str sorted));
+    ("by_node", by_node);
+    ("nodes", nodes);
+    ("procedures", procedures);
+    ("total_locations", json_of_locset (MyAccessAnalysis.Access.total_abslocs access));
+    ("def_nodes", loc_node_entries MyAccessAnalysis.Access.find_def_nodes);
+    ("use_nodes", loc_node_entries MyAccessAnalysis.Access.find_use_nodes);
   ]
 
-let to_json_sparse files global inputof outputof access dug worklist locset locset_fs =
+let dug_edge_kind global src dst =
+  let src_pid = InterCfg.Node.get_pid src in
+  let dst_pid = InterCfg.Node.get_pid dst in
+  if InterCfg.is_callnode src global.Global.icfg
+     && IntraCfg.is_entry (InterCfg.Node.get_cfgnode dst) then
+    "call"
+  else if IntraCfg.is_exit (InterCfg.Node.get_cfgnode src)
+       && InterCfg.is_returnnode dst global.Global.icfg then
+    "return"
+  else if src_pid = dst_pid then "intra"
+  else "inter"
+
+let json_of_dug global dug =
+  let nodes =
+    MyDUGraph.fold_node (fun v acc -> v :: acc) dug []
+    |> List.sort InterCfg.Node.compare
+  in
+  let edges =
+    MyDUGraph.fold_edges (fun src dst acc ->
+      let locs = MyDUGraph.get_abslocs src dst dug in
+      let edge = assoc [
+        ("src", str (node_id src));
+        ("dst", str (node_id dst));
+        ("src_procedure", str (InterCfg.Node.get_pid src));
+        ("dst_procedure", str (InterCfg.Node.get_pid dst));
+        ("kind", str (dug_edge_kind global src dst));
+        ("locs", json_of_locset locs);
+      ] in
+      (node_id src, node_id dst, edge) :: acc
+    ) dug []
+    |> List.sort (fun (src1, dst1, _) (src2, dst2, _) ->
+      let cmp = String.compare src1 src2 in
+      if cmp <> 0 then cmp else String.compare dst1 dst2)
+    |> List.map (fun (_, _, edge) -> edge)
+  in
+  assoc [
+    ("nodes", json_of_nodes nodes);
+    ("edges", list edges);
+    ("node_count", int (List.length nodes));
+    ("edge_count", int (List.length edges));
+    ("label_count", int (MyDUGraph.nb_loc dug));
+  ]
+
+let json_of_worklist_info worklist =
+  let snapshot = MyWorklist.snapshot worklist in
+  let order =
+    snapshot.MyWorklist.order
+    |> List.map (fun entry ->
+      assoc [
+        ("node", str (node_id entry.MyWorklist.node));
+        ("order", int entry.MyWorklist.order);
+        ("loop_header", bool entry.MyWorklist.loop_header);
+        ("head_order", opt int entry.MyWorklist.head_order);
+      ])
+  in
+  let scc_ids nodes =
+    nodes
+    |> List.map node_id
+    |> sorted_strings
+    |> List.map str
+    |> list
+  in
+  let scc_order =
+    snapshot.MyWorklist.sccs |> List.map scc_ids |> list
+  in
+  let sccs =
+    snapshot.MyWorklist.sccs
+    |> List.mapi (fun index nodes ->
+      assoc [
+        ("index", int index);
+        ("nodes", scc_ids nodes);
+      ])
+    |> list
+  in
+  let loop_headers =
+    snapshot.MyWorklist.loop_headers
+    |> List.map node_id
+    |> sorted_strings
+    |> List.map str
+    |> list
+  in
+  assoc [
+    ("order", list order);
+    ("scc_order", scc_order);
+    ("sccs", sccs);
+    ("loop_headers", loop_headers);
+  ]
+
+let sparse_spec_json locset locset_fs premem unsound_lib unsound_update unsound_bitwise =
+  assoc [
+    ("locsets", assoc [
+      ("all", json_of_locset locset);
+      ("flow_sensitive", json_of_locset locset_fs);
+    ]);
+    ("premem", memory premem);
+    ("ptrinfo", table ItvDom.Table.empty);
+    ("unsound_lib", json_string_list (BatSet.elements unsound_lib));
+    ("unsound_update", bool unsound_update);
+    ("unsound_bitwise", bool unsound_bitwise);
+  ]
+
+let collect_access_locs access acc =
+  PowLoc.elements (MyAccessAnalysis.Access.total_abslocs access) @ acc
+
+let collect_dug_locs dug acc =
+  MyDUGraph.fold_edges (fun src dst acc ->
+    PowLoc.elements (MyDUGraph.get_abslocs src dst dug) @ acc
+  ) dug acc
+
+let sparse_identity_locs inputof outputof access dug locset locset_fs =
+  []
+  |> collect_table_locs inputof
+  |> collect_table_locs outputof
+  |> collect_access_locs access
+  |> collect_dug_locs dug
+  |> fun acc -> PowLoc.elements locset @ PowLoc.elements locset_fs @ acc
+
+let to_json_sparse files global inputof outputof access dug worklist locset locset_fs
+    premem unsound_lib unsound_update unsound_bitwise =
+  let locset_json = json_of_locset locset in
+  let locset_fs_json = json_of_locset locset_fs in
   let sparse_json = assoc [
-    ("locset", json_of_locset locset);
-    ("locset_fs", json_of_locset locset_fs);
-    ("access", json_of_access access);
-    ("dug", json_of_dug dug);
-    ("worklist", json_of_worklist_info worklist dug);
-    ("inputof", table inputof);
-    ("outputof", table outputof);
+    ("locsets", assoc [
+      ("all", locset_json);
+      ("flow_sensitive", locset_fs_json);
+    ]);
+    ("locset", locset_json);
+    ("locset_fs", locset_fs_json);
+    ("spec", sparse_spec_json locset locset_fs premem unsound_lib unsound_update unsound_bitwise);
+    ("access", json_of_access global access);
+    ("dug", json_of_dug global dug);
+    ("worklist", json_of_worklist_info worklist);
+    ("callgraph", callgraph global);
+    ("dump", dump global.Global.dump);
   ] in
+  let extra_locs =
+    sparse_identity_locs inputof outputof access dug locset locset_fs
+  in
   assoc [
     ("schema", str "sparrow.oracle.v1");
     ("stage", str (string_of_stage Sparse));
     ("metadata", metadata files);
-    ("identities", identities global);
+    ("identities", identities ~extra_locs global);
     ("global", json_global global);
+    ("inputof", table inputof);
+    ("outputof", table outputof);
     ("sparse", sparse_json);
   ]
 
@@ -913,11 +1065,14 @@ let write_sparse path files global =
   let (global_anal, inputof, outputof, _) = ItvAnalysis.do_analysis global in
   let locset = ItvAnalysis.get_locset global.Global.mem in
   let locset_fs = PartialFlowSensitivity.select global locset in
+  let unsound_lib = UnsoundLib.collect global in
+  let unsound_update = (!Options.bugfinder >= 2) in
+  let unsound_bitwise = (!Options.bugfinder >= 1) in
   let spec = { ItvSem.Spec.empty with
     ItvSem.Spec.locset; locset_fs; premem = global.Global.mem;
-    ItvSem.Spec.unsound_lib = UnsoundLib.collect global;
-    unsound_update = (!Options.bugfinder >= 2);
-    unsound_bitwise = (!Options.bugfinder >= 1);
+    ItvSem.Spec.unsound_lib;
+    unsound_update;
+    unsound_bitwise;
   } in
   let access = MyAccessAnalysis.perform global locset (ItvSem.run AbsSem.Strong spec) global.Global.mem in
   let dug = MySsaDug.make (global, access, locset_fs) in
@@ -925,6 +1080,7 @@ let write_sparse path files global =
   let chan = open_out path in
   try
     to_json_sparse files global_anal inputof outputof access dug worklist locset locset_fs
+      global.Global.mem unsound_lib unsound_update unsound_bitwise
     |> Yojson.Safe.pretty_to_channel chan;
     output_char chan '\n';
     close_out chan
