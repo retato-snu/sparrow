@@ -804,7 +804,8 @@ let global_types g acc =
     List.fold_left (fun acc vi -> vi.vtype :: acc) acc (fd.sformals @ fd.slocals)
   | GAsm _ | GPragma _ | GText _ -> acc
 
-let identities ?(extra_locs = []) ?(extra_procs = []) global =
+let identities ?(extra_locs = []) ?(extra_procs = []) ?(extra_type_ids = [])
+    global =
   let pids = procs_of_global global @ extra_procs |> sorted_procs in
   let nodes = InterCfg.nodesof global.Global.icfg |> sorted_nodes in
   let locs =
@@ -821,6 +822,7 @@ let identities ?(extra_locs = []) ?(extra_procs = []) global =
   let surface_type_ids =
     type_ids_in_json [] (file global.Global.file)
     |> fun acc -> type_ids_in_json acc (icfg global.Global.icfg)
+    |> fun acc -> extra_type_ids @ acc
     |> sorted_strings
   in
   let typed_type_ids = List.map type_id types |> sorted_strings in
@@ -1473,6 +1475,7 @@ let to_json_sparse files pre_global global inputof outputof access dug worklist
     locset locset_fs premem unsound_lib unsound_update unsound_bitwise =
   let locset_json = json_of_locset locset in
   let locset_fs_json = json_of_locset locset_fs in
+  let post_pre_global_json = post_pre_global_surface pre_global in
   let sparse_json = assoc [
     ("locsets", assoc [
       ("all", locset_json);
@@ -1484,7 +1487,7 @@ let to_json_sparse files pre_global global inputof outputof access dug worklist
     ("access", json_of_access global access);
     ("dug", json_of_dug global dug);
     ("worklist", json_of_worklist_info worklist);
-    ("post_pre_global", post_pre_global_surface pre_global);
+    ("post_pre_global", post_pre_global_json);
     ("post_pre_global_fingerprint", linking_identity files pre_global);
     ("callgraph", callgraph global);
     ("dump", dump global.Global.dump);
@@ -1498,6 +1501,7 @@ let to_json_sparse files pre_global global inputof outputof access dug worklist
     ("metadata", metadata files);
     ( "identities",
       identities ~extra_locs
+        ~extra_type_ids:(type_ids_in_json [] post_pre_global_json)
         ~extra_procs:
           (procs_of_global pre_global
            @ sparse_identity_procs inputof outputof pre_global.Global.mem)
