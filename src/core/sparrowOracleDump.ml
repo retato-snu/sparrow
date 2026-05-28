@@ -965,8 +965,34 @@ let sha256_hex input =
   Array.iter add_word h;
   Buffer.contents buffer
 
+let starts_with prefix value =
+  let prefix_length = String.length prefix in
+  String.length value >= prefix_length
+  && String.sub value 0 prefix_length = prefix
+
+let is_type_object fields =
+  List.exists
+    (function
+      | "id", `String value -> starts_with "type:" value
+      | _ -> false)
+    fields
+
+let rec normalize_json = function
+  | `Assoc fields ->
+    let type_object = is_type_object fields in
+    fields
+    |> List.filter (fun (key, _) ->
+        key <> "pretty"
+        && key <> "display"
+        && not (type_object && key = "text"))
+    |> List.map (fun (key, value) -> (key, normalize_json value))
+    |> List.sort (fun (left, _) (right, _) -> compare left right)
+    |> fun fields -> `Assoc fields
+  | `List values -> `List (List.map normalize_json values)
+  | json -> json
+
 let json_digest json =
-  json |> Yojson.Safe.to_string |> sha256_hex
+  json |> normalize_json |> Yojson.Safe.to_string |> sha256_hex
 
 let linking_identity files global =
   let proc_order =
