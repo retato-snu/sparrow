@@ -784,6 +784,8 @@ let options_metadata () =
     ("bugfinder", int !Options.bugfinder);
     ("scaffold", bool !Options.scaffold);
     ("int_overflow", bool !Options.int_overflow);
+    ("pfs", int !Options.pfs);
+    ("narrowing", bool !Options.narrow);
     ("inline", json_string_list !Options.inline);
     ("unsound_alloc", bool !Options.unsound_alloc);
     ("unsound_loop", json_string_list (BatSet.elements !Options.unsound_loop));
