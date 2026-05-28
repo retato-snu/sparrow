@@ -23,6 +23,7 @@ sig
   module Dom : InstrumentedMem.S
   module Table : MapDom.CPO with type t = MapDom.MakeCPO(BasicDom.Node)(Dom).t and type A.t = BasicDom.Node.t and type B.t = Dom.t
   module Spec : Spec.S with type Dom.t = Dom.t and type Dom.A.t = Dom.A.t and type Dom.PowA.t = Dom.PowA.t
+  val clear_cache : unit -> unit
   val perform : Spec.t -> Global.t -> Global.t * Table.t * Table.t
 end
 
@@ -50,6 +51,10 @@ struct
       DUGraph.fold_succ union_locs dug idx PowLoc.empty
     in
     Hashtbl.add def_locs_cache idx def_locs; def_locs
+
+  let clear_cache () =
+    Hashtbl.clear def_locs_cache;
+    SsaDug.clear_cache ()
 
   let print_iteration () =
     total_iterations := !total_iterations + 1;

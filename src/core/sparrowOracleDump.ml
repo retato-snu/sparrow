@@ -813,8 +813,160 @@ let json_global global =
     ("table", table global.Global.table);
   ]
 
+let sha256_hex input =
+  let int32_of_hex text =
+    Int64.of_string ("0x" ^ text) |> Int64.to_int32
+  in
+  let right_rotate value amount =
+    Int32.logor (Int32.shift_right_logical value amount)
+      (Int32.shift_left value (32 - amount))
+  in
+  let add4 a b c d = Int32.add (Int32.add a b) (Int32.add c d) in
+  let add5 a b c d e = Int32.add (add4 a b c d) e in
+  let k =
+    Array.map int32_of_hex
+      [|
+        "428a2f98"; "71374491"; "b5c0fbcf"; "e9b5dba5";
+        "3956c25b"; "59f111f1"; "923f82a4"; "ab1c5ed5";
+        "d807aa98"; "12835b01"; "243185be"; "550c7dc3";
+        "72be5d74"; "80deb1fe"; "9bdc06a7"; "c19bf174";
+        "e49b69c1"; "efbe4786"; "0fc19dc6"; "240ca1cc";
+        "2de92c6f"; "4a7484aa"; "5cb0a9dc"; "76f988da";
+        "983e5152"; "a831c66d"; "b00327c8"; "bf597fc7";
+        "c6e00bf3"; "d5a79147"; "06ca6351"; "14292967";
+        "27b70a85"; "2e1b2138"; "4d2c6dfc"; "53380d13";
+        "650a7354"; "766a0abb"; "81c2c92e"; "92722c85";
+        "a2bfe8a1"; "a81a664b"; "c24b8b70"; "c76c51a3";
+        "d192e819"; "d6990624"; "f40e3585"; "106aa070";
+        "19a4c116"; "1e376c08"; "2748774c"; "34b0bcb5";
+        "391c0cb3"; "4ed8aa4a"; "5b9cca4f"; "682e6ff3";
+        "748f82ee"; "78a5636f"; "84c87814"; "8cc70208";
+        "90befffa"; "a4506ceb"; "bef9a3f7"; "c67178f2";
+      |]
+  in
+  let h =
+    Array.map int32_of_hex
+      [|
+        "6a09e667"; "bb67ae85"; "3c6ef372"; "a54ff53a";
+        "510e527f"; "9b05688c"; "1f83d9ab"; "5be0cd19";
+      |]
+  in
+  let length = String.length input in
+  let padded_length =
+    let min_length = length + 1 + 8 in
+    ((min_length + 63) / 64) * 64
+  in
+  let padded = Bytes.make padded_length '\000' in
+  Bytes.blit_string input 0 padded 0 length;
+  Bytes.set padded length (Char.chr 0x80);
+  let bit_length = Int64.mul (Int64.of_int length) 8L in
+  for index = 0 to 7 do
+    let shift = (7 - index) * 8 in
+    let byte =
+      Int64.shift_right_logical bit_length shift
+      |> Int64.logand 0xffL
+      |> Int64.to_int
+    in
+    Bytes.set padded (padded_length - 8 + index) (Char.chr byte)
+  done;
+  let read_word offset =
+    let byte index =
+      Bytes.get padded (offset + index) |> Char.code |> Int32.of_int
+    in
+    Int32.logor
+      (Int32.shift_left (byte 0) 24)
+      (Int32.logor
+         (Int32.shift_left (byte 1) 16)
+         (Int32.logor (Int32.shift_left (byte 2) 8) (byte 3)))
+  in
+  for chunk = 0 to (padded_length / 64) - 1 do
+    let offset = chunk * 64 in
+    let w = Array.make 64 0l in
+    for index = 0 to 15 do
+      w.(index) <- read_word (offset + (index * 4))
+    done;
+    for index = 16 to 63 do
+      let s0 =
+        Int32.logxor
+          (Int32.logxor (right_rotate w.(index - 15) 7)
+             (right_rotate w.(index - 15) 18))
+          (Int32.shift_right_logical w.(index - 15) 3)
+      in
+      let s1 =
+        Int32.logxor
+          (Int32.logxor (right_rotate w.(index - 2) 17)
+             (right_rotate w.(index - 2) 19))
+          (Int32.shift_right_logical w.(index - 2) 10)
+      in
+      w.(index) <- add4 w.(index - 16) s0 w.(index - 7) s1
+    done;
+    let a = ref h.(0) in
+    let b = ref h.(1) in
+    let c = ref h.(2) in
+    let d = ref h.(3) in
+    let e = ref h.(4) in
+    let f = ref h.(5) in
+    let g = ref h.(6) in
+    let h_work = ref h.(7) in
+    for index = 0 to 63 do
+      let s1 =
+        Int32.logxor
+          (Int32.logxor (right_rotate !e 6) (right_rotate !e 11))
+          (right_rotate !e 25)
+      in
+      let ch =
+        Int32.logxor (Int32.logand !e !f)
+          (Int32.logand (Int32.lognot !e) !g)
+      in
+      let temp1 = add5 !h_work s1 ch k.(index) w.(index) in
+      let s0 =
+        Int32.logxor
+          (Int32.logxor (right_rotate !a 2) (right_rotate !a 13))
+          (right_rotate !a 22)
+      in
+      let maj =
+        Int32.logxor
+          (Int32.logxor (Int32.logand !a !b) (Int32.logand !a !c))
+          (Int32.logand !b !c)
+      in
+      let temp2 = Int32.add s0 maj in
+      h_work := !g;
+      g := !f;
+      f := !e;
+      e := Int32.add !d temp1;
+      d := !c;
+      c := !b;
+      b := !a;
+      a := Int32.add temp1 temp2
+    done;
+    h.(0) <- Int32.add h.(0) !a;
+    h.(1) <- Int32.add h.(1) !b;
+    h.(2) <- Int32.add h.(2) !c;
+    h.(3) <- Int32.add h.(3) !d;
+    h.(4) <- Int32.add h.(4) !e;
+    h.(5) <- Int32.add h.(5) !f;
+    h.(6) <- Int32.add h.(6) !g;
+    h.(7) <- Int32.add h.(7) !h_work
+  done;
+  let hex_digit value =
+    String.get "0123456789abcdef" value
+  in
+  let buffer = Buffer.create 64 in
+  let add_word word =
+    List.iter
+      (fun shift ->
+         Int32.shift_right_logical word shift
+         |> Int32.logand 0xfl
+         |> Int32.to_int
+         |> hex_digit
+         |> Buffer.add_char buffer)
+      [28; 24; 20; 16; 12; 8; 4; 0]
+  in
+  Array.iter add_word h;
+  Buffer.contents buffer
+
 let json_digest json =
-  json |> Yojson.Safe.to_string |> Digest.string |> Digest.to_hex
+  json |> Yojson.Safe.to_string |> sha256_hex
 
 let linking_identity files global =
   let proc_order =
@@ -842,7 +994,7 @@ let linking_identity files global =
     ("run_id", str ("oracle:" ^ json_digest run_surface));
     ("proc_order", proc_order);
     ("surface_hash", str (json_digest surface));
-    ("digest_algorithm", str "ocaml-digest-md5");
+    ("digest_algorithm", str "sha256");
   ]
 
 let to_json stage files global =
@@ -860,6 +1012,10 @@ module MyAccessAnalysis = AccessAnalysis.Make(MyAccessSem)
 module MyDUGraph = Dug.Make(ItvDom.Mem)
 module MySsaDug = SsaDug.Make(MyDUGraph)(MyAccessAnalysis.Access)
 module MyWorklist = Worklist.Make(MyDUGraph)
+
+let reset_sparse_caches () =
+  ItvAnalysis.Analysis.clear_cache ();
+  MySsaDug.clear_cache ()
 
 let loc_id_string_list locs =
   locs |> List.map loc_id |> sorted_strings
@@ -1110,6 +1266,7 @@ let to_json_sparse files pre_global global inputof outputof access dug worklist
   ]
 
 let write_sparse path files global =
+  reset_sparse_caches ();
   let (global_anal, inputof, outputof, _) = ItvAnalysis.do_analysis global in
   let locset = ItvAnalysis.get_locset global.Global.mem in
   let locset_fs = PartialFlowSensitivity.select global locset in

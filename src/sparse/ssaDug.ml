@@ -22,6 +22,7 @@ sig
   module PowLoc : PowDom.CPO
   type node = BasicDom.Node.t
   type loc
+  val clear_cache        : unit -> unit
   val make              : ?skip_nodes : BasicDom.Node.t BatSet.t -> Global.t * Access.t * PowLoc.t -> DUGraph.t
   val to_json_intra     : DUGraph.t -> Access.t -> Yojson.Safe.t
   val to_json_inter     : DUGraph.t -> Access.t -> Yojson.Safe.t
@@ -57,6 +58,13 @@ struct
   let def_wo_local_table = Hashtbl.create 10000
   let access_table = Hashtbl.create 10000
   let access_wo_local_table = Hashtbl.create 10000
+
+  let clear_cache () =
+    Hashtbl.clear use_table;
+    Hashtbl.clear def_table;
+    Hashtbl.clear def_wo_local_table;
+    Hashtbl.clear access_table;
+    Hashtbl.clear access_wo_local_table
 
   let uses_of_function : Global.t -> Access.t -> pid -> PowLoc.t -> PowLoc.t
   =fun global access pid locset ->

@@ -15,6 +15,7 @@ sig
   module PowLoc : PowDom.CPO
   type node = BasicDom.Node.t
   type loc
+  val clear_cache        : unit -> unit
   val make              : ?skip_nodes : BasicDom.Node.t BatSet.t -> Global.t * Access.t * PowLoc.t -> DUGraph.t
   val to_json_intra     : DUGraph.t -> Access.t -> Yojson.Safe.t
   val to_json_inter     : DUGraph.t -> Access.t -> Yojson.Safe.t
