@@ -751,6 +751,37 @@ let locs_of_global global =
   |> List.sort Loc.compare
   |> uniq_sorted Loc.compare
 
+let procs_of_value value =
+  ItvDom.Val.pow_proc_of_val value |> PowProc.elements
+
+let collect_mem_procs mem acc =
+  ItvDom.Mem.foldi (fun _ value acc -> procs_of_value value @ acc) mem acc
+
+let collect_table_procs table acc =
+  ItvDom.Table.foldi (fun _ mem acc -> collect_mem_procs mem acc) table acc
+
+let collect_dump_procs dump acc =
+  Dump.foldi (fun pid _ acc -> pid :: acc) dump acc
+
+let collect_callgraph_procs global acc =
+  let pids = InterCfg.pidsof global.Global.icfg in
+  List.fold_left
+    (fun acc pid ->
+       pid
+       :: (CallGraph.callees pid global.Global.callgraph |> PowProc.elements)
+       @ (CallGraph.trans_callees pid global.Global.callgraph
+          |> PowProc.elements)
+       @ acc)
+    acc pids
+
+let procs_of_global global =
+  InterCfg.pidsof global.Global.icfg
+  |> collect_mem_procs global.Global.mem
+  |> collect_table_procs global.Global.table
+  |> collect_dump_procs global.Global.dump
+  |> collect_callgraph_procs global
+  |> sorted_procs
+
 let rec loc_types loc acc =
   let acc =
     match Loc.typ loc with
@@ -773,8 +804,8 @@ let global_types g acc =
     List.fold_left (fun acc vi -> vi.vtype :: acc) acc (fd.sformals @ fd.slocals)
   | GAsm _ | GPragma _ | GText _ -> acc
 
-let identities ?(extra_locs = []) global =
-  let pids = InterCfg.pidsof global.Global.icfg |> sorted_procs in
+let identities ?(extra_locs = []) ?(extra_procs = []) global =
+  let pids = procs_of_global global @ extra_procs |> sorted_procs in
   let nodes = InterCfg.nodesof global.Global.icfg |> sorted_nodes in
   let locs =
     locs_of_global global @ extra_locs
@@ -1432,6 +1463,12 @@ let sparse_identity_locs inputof outputof access dug locset locset_fs =
   |> collect_dug_locs dug
   |> fun acc -> PowLoc.elements locset @ PowLoc.elements locset_fs @ acc
 
+let sparse_identity_procs inputof outputof premem =
+  []
+  |> collect_table_procs inputof
+  |> collect_table_procs outputof
+  |> collect_mem_procs premem
+
 let to_json_sparse files pre_global global inputof outputof access dug worklist
     locset locset_fs premem unsound_lib unsound_update unsound_bitwise =
   let locset_json = json_of_locset locset in
@@ -1459,7 +1496,12 @@ let to_json_sparse files pre_global global inputof outputof access dug worklist
     ("schema", str "sparrow.oracle.v1");
     ("stage", str (string_of_stage Sparse));
     ("metadata", metadata files);
-    ("identities", identities ~extra_locs global);
+    ( "identities",
+      identities ~extra_locs
+        ~extra_procs:
+          (procs_of_global pre_global
+           @ sparse_identity_procs inputof outputof pre_global.Global.mem)
+        global );
     ("global", json_global global);
     ("inputof", table inputof);
     ("outputof", table outputof);
