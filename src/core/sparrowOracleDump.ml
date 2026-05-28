@@ -813,6 +813,38 @@ let json_global global =
     ("table", table global.Global.table);
   ]
 
+let json_digest json =
+  json |> Yojson.Safe.to_string |> Digest.string |> Digest.to_hex
+
+let linking_identity files global =
+  let proc_order =
+    InterCfg.pidsof global.Global.icfg
+    |> sorted_procs
+    |> List.map str
+    |> list
+  in
+  let surface =
+    assoc [
+      ("file", file global.Global.file);
+      ("icfg", icfg global.Global.icfg);
+      ("callgraph", callgraph global);
+      ("mem", memory global.Global.mem);
+    ]
+  in
+  let run_surface =
+    assoc [
+      ("files", list (List.map str files));
+      ("proc_order", proc_order);
+      ("surface", surface);
+    ]
+  in
+  assoc [
+    ("run_id", str ("oracle:" ^ json_digest run_surface));
+    ("proc_order", proc_order);
+    ("surface_hash", str (json_digest surface));
+    ("digest_algorithm", str "ocaml-digest-md5");
+  ]
+
 let to_json stage files global =
   assoc [
     ("schema", str "sparrow.oracle.v1");
@@ -880,17 +912,29 @@ let json_of_access global access =
       ])
     |> list
   in
-  let procedures =
+  let procedure_entries =
     InterCfg.pidsof global.Global.icfg
     |> sorted_procs
     |> List.map (fun pid ->
-      assoc [
-        ("procedure", str pid);
+      (pid, assoc [
         ("direct", json_of_access_info (MyAccessAnalysis.Access.find_proc pid access));
         ("reachable", json_of_access_info (MyAccessAnalysis.Access.find_proc_reach pid access));
         ("reachable_without_local",
           json_of_access_info (MyAccessAnalysis.Access.find_proc_reach_wo_local pid access));
         ("local", json_of_locset (MyAccessAnalysis.Access.find_proc_local pid access));
+      ]))
+  in
+  let by_procedure =
+    procedure_entries
+    |> List.map (fun (pid, info) -> (pid, info))
+    |> assoc
+  in
+  let procedures =
+    procedure_entries
+    |> List.map (fun (pid, info) ->
+      assoc [
+        ("procedure", str pid);
+        ("access", info);
       ])
     |> list
   in
@@ -907,6 +951,7 @@ let json_of_access global access =
   in
   assoc [
     ("by_node", by_node);
+    ("by_procedure", by_procedure);
     ("nodes", nodes);
     ("procedures", procedures);
     ("total_locations", json_of_locset (MyAccessAnalysis.Access.total_abslocs access));
@@ -1031,8 +1076,8 @@ let sparse_identity_locs inputof outputof access dug locset locset_fs =
   |> collect_dug_locs dug
   |> fun acc -> PowLoc.elements locset @ PowLoc.elements locset_fs @ acc
 
-let to_json_sparse files global inputof outputof access dug worklist locset locset_fs
-    premem unsound_lib unsound_update unsound_bitwise =
+let to_json_sparse files pre_global global inputof outputof access dug worklist
+    locset locset_fs premem unsound_lib unsound_update unsound_bitwise =
   let locset_json = json_of_locset locset in
   let locset_fs_json = json_of_locset locset_fs in
   let sparse_json = assoc [
@@ -1046,6 +1091,7 @@ let to_json_sparse files global inputof outputof access dug worklist locset locs
     ("access", json_of_access global access);
     ("dug", json_of_dug global dug);
     ("worklist", json_of_worklist_info worklist);
+    ("post_pre_global_fingerprint", linking_identity files pre_global);
     ("callgraph", callgraph global);
     ("dump", dump global.Global.dump);
   ] in
@@ -1081,8 +1127,9 @@ let write_sparse path files global =
   let worklist = MyWorklist.init dug in
   let chan = open_out path in
   try
-    to_json_sparse files global_anal inputof outputof access dug worklist locset locset_fs
-      global.Global.mem unsound_lib unsound_update unsound_bitwise
+    to_json_sparse files global global_anal inputof outputof access dug worklist
+      locset locset_fs global.Global.mem unsound_lib unsound_update
+      unsound_bitwise
     |> Yojson.Safe.pretty_to_channel chan;
     output_char chan '\n';
     close_out chan
