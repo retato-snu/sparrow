@@ -1021,6 +1021,14 @@ let rec normalize_json = function
 let json_digest json =
   json |> normalize_json |> Yojson.Safe.to_string |> sha256_hex
 
+let post_pre_global_surface global =
+  assoc [
+    ("file", file global.Global.file);
+    ("icfg", icfg global.Global.icfg);
+    ("callgraph", callgraph global);
+    ("mem", memory global.Global.mem);
+  ]
+
 let linking_identity files global =
   let proc_order =
     InterCfg.pidsof global.Global.icfg
@@ -1028,14 +1036,7 @@ let linking_identity files global =
     |> List.map str
     |> list
   in
-  let surface =
-    assoc [
-      ("file", file global.Global.file);
-      ("icfg", icfg global.Global.icfg);
-      ("callgraph", callgraph global);
-      ("mem", memory global.Global.mem);
-    ]
-  in
+  let surface = post_pre_global_surface global in
   let run_surface =
     assoc [
       ("files", list (List.map str files));
@@ -1300,6 +1301,7 @@ let to_json_sparse files pre_global global inputof outputof access dug worklist
     ("access", json_of_access global access);
     ("dug", json_of_dug global dug);
     ("worklist", json_of_worklist_info worklist);
+    ("post_pre_global", post_pre_global_surface pre_global);
     ("post_pre_global_fingerprint", linking_identity files pre_global);
     ("callgraph", callgraph global);
     ("dump", dump global.Global.dump);
