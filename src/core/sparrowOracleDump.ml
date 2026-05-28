@@ -1054,6 +1054,130 @@ let rec normalize_json = function
 let json_digest json =
   json |> normalize_json |> Yojson.Safe.to_string |> sha256_hex
 
+let json_sort_key json =
+  json |> normalize_json |> Yojson.Safe.to_string
+
+let compare_json left right =
+  String.compare (json_sort_key left) (json_sort_key right)
+
+let sort_json_values values =
+  List.sort compare_json values
+
+let string_key key = function
+  | `Assoc fields ->
+    (match List.assoc_opt key fields with
+     | Some (`String value) -> Some value
+     | _ -> None)
+  | _ -> None
+
+let compare_by_optional_string key left right =
+  match string_key key left, string_key key right with
+  | Some left_key, Some right_key ->
+    let cmp = String.compare left_key right_key in
+    if cmp <> 0 then cmp else compare_json left right
+  | Some _, None -> -1
+  | None, Some _ -> 1
+  | None, None -> compare_json left right
+
+let sort_json_by_string key values =
+  List.sort (compare_by_optional_string key) values
+
+let compare_global_item left right =
+  match left, right with
+  | `Assoc left_fields, `Assoc right_fields ->
+    (match List.assoc_opt "order" left_fields,
+           List.assoc_opt "order" right_fields with
+     | Some (`Int left_order), Some (`Int right_order) ->
+       let cmp = compare left_order right_order in
+       if cmp <> 0 then cmp else compare_json left right
+     | Some (`Int _), _ -> -1
+     | _, Some (`Int _) -> 1
+     | _ -> compare_json left right)
+  | _ -> compare_json left right
+
+let replace_list_field key sort_values fields =
+  List.map
+    (fun (field, value) ->
+       if field = key then
+         match value with
+         | `List values -> field, `List (sort_values values)
+         | _ -> field, value
+       else field, value)
+    fields
+
+let canonical_global_file_json = function
+  | `Assoc fields ->
+    fields
+    |> replace_list_field "globals"
+      (fun values ->
+         values
+         |> List.map normalize_json
+         |> List.sort compare_global_item)
+    |> assoc
+    |> normalize_json
+  | json -> normalize_json json
+
+let canonical_icfg_cfg_json = function
+  | `Assoc fields ->
+    fields
+    |> replace_list_field "nodes"
+      (fun values ->
+         values
+         |> List.map normalize_json
+         |> sort_json_by_string "id")
+    |> replace_list_field "edges"
+      (fun values ->
+         values
+         |> List.map normalize_json
+         |> sort_json_values)
+    |> assoc
+    |> normalize_json
+  | json -> normalize_json json
+
+let canonical_global_icfg_json = function
+  | `Assoc fields ->
+    fields
+    |> replace_list_field "procedures"
+      (fun values ->
+         values
+         |> List.map normalize_json
+         |> sort_json_by_string "id")
+    |> replace_list_field "cfgs"
+      (fun values ->
+         values
+         |> List.map canonical_icfg_cfg_json
+         |> sort_json_by_string "procedure")
+    |> replace_list_field "call_edges"
+      (fun values ->
+         values
+         |> List.map normalize_json
+         |> sort_json_values)
+    |> assoc
+    |> normalize_json
+  | json -> normalize_json json
+
+let canonical_callgraph_json = function
+  | `Assoc fields ->
+    fields
+    |> replace_list_field "nodes"
+      (fun values ->
+         values
+         |> List.map normalize_json
+         |> sort_json_values)
+    |> replace_list_field "direct_edges"
+      (fun values ->
+         values
+         |> List.map normalize_json
+         |> sort_json_values)
+    |> replace_list_field "transitive_edges"
+      (fun values ->
+         values
+         |> List.map normalize_json
+         |> sort_json_values)
+    |> assoc
+    |> normalize_json
+  | json -> normalize_json json
+
 let string_list_json _path json =
   let values =
     match json with
@@ -1202,9 +1326,9 @@ let post_pre_global_surface global =
 
 let post_pre_global_fingerprint_surface global =
   assoc [
-    ("file", normalize_json (file global.Global.file));
-    ("icfg", normalize_json (icfg global.Global.icfg));
-    ("callgraph", normalize_json (callgraph global));
+    ("file", canonical_global_file_json (file global.Global.file));
+    ("icfg", canonical_global_icfg_json (icfg global.Global.icfg));
+    ("callgraph", canonical_callgraph_json (callgraph global));
     ("mem", canonical_memory_json (memory global.Global.mem));
   ]
 
