@@ -1021,12 +1021,158 @@ let rec normalize_json = function
 let json_digest json =
   json |> normalize_json |> Yojson.Safe.to_string |> sha256_hex
 
+let string_list_json _path json =
+  let values =
+    match json with
+    | `List values ->
+      List.filter_map
+        (function
+          | `String value -> Some value
+          | _ -> None)
+        values
+    | _ -> []
+  in
+  values
+  |> sorted_strings
+  |> List.map str
+  |> list
+
+let canonical_interval_json json =
+  normalize_json json
+
+let canonical_array_json = function
+  | `Assoc fields ->
+    (match List.assoc_opt "kind" fields with
+     | Some (`String "top") -> assoc [("kind", str "top")]
+     | _ ->
+       let entries =
+         match List.assoc_opt "entries" fields with
+         | Some (`List entries) ->
+           entries
+           |> List.filter_map (function
+               | `Assoc entry_fields ->
+                 (match List.assoc_opt "allocsite" entry_fields with
+                  | Some (`String allocsite) ->
+                    Some
+                      ( allocsite,
+                        assoc [
+                          ("allocsite", str allocsite);
+                          ( "offset",
+                            match List.assoc_opt "offset" entry_fields with
+                            | Some value -> canonical_interval_json value
+                            | None -> `Null );
+                          ( "size",
+                            match List.assoc_opt "size" entry_fields with
+                            | Some value -> canonical_interval_json value
+                            | None -> `Null );
+                          ( "stride",
+                            match List.assoc_opt "stride" entry_fields with
+                            | Some value -> canonical_interval_json value
+                            | None -> `Null );
+                          ( "null_pos",
+                            match List.assoc_opt "null_pos" entry_fields with
+                            | Some value -> canonical_interval_json value
+                            | None -> `Null );
+                          ( "structure",
+                            match List.assoc_opt "structure" entry_fields with
+                            | Some value ->
+                              string_list_json
+                                "$.value.array.entries[].structure" value
+                            | None -> list [] );
+                        ] )
+                  | _ -> None)
+               | _ -> None)
+           |> List.sort (fun (left, _) (right, _) -> String.compare left right)
+           |> List.map snd
+         | _ -> []
+       in
+       assoc [("kind", str "map"); ("entries", list entries)])
+  | _ -> assoc []
+
+let canonical_struct_json = function
+  | `Assoc fields ->
+    (match List.assoc_opt "kind" fields with
+     | Some (`String "top") -> assoc [("kind", str "top")]
+     | _ ->
+       let entries =
+         match List.assoc_opt "entries" fields with
+         | Some (`List entries) ->
+           entries
+           |> List.filter_map (function
+               | `Assoc entry_fields ->
+                 (match List.assoc_opt "location" entry_fields with
+                  | Some (`String location) ->
+                    Some
+                      ( location,
+                        assoc [
+                          ("location", str location);
+                          ( "structures",
+                            match List.assoc_opt "structures" entry_fields with
+                            | Some value ->
+                              string_list_json
+                                "$.value.struct.entries[].structures" value
+                            | None -> list [] );
+                        ] )
+                  | _ -> None)
+               | _ -> None)
+           |> List.sort (fun (left, _) (right, _) -> String.compare left right)
+           |> List.map snd
+         | _ -> []
+       in
+       assoc [("kind", str "map"); ("entries", list entries)])
+  | _ -> assoc []
+
+let canonical_value_json = function
+  | `Assoc fields ->
+    let field key =
+      match List.assoc_opt key fields with
+      | Some value -> value
+      | None -> `Null
+    in
+    assoc [
+      ("interval", canonical_interval_json (field "interval"));
+      ("points_to", string_list_json "$.value.points_to" (field "points_to"));
+      ("array", canonical_array_json (field "array"));
+      ("struct", canonical_struct_json (field "struct"));
+      ("procedures", string_list_json "$.value.procedures" (field "procedures"));
+    ]
+  | _ -> assoc []
+
+let canonical_memory_json mem_json =
+  let entries =
+    match mem_json with
+    | `List entries ->
+      entries
+      |> List.filter_map (function
+          | `Assoc fields ->
+            (match List.assoc_opt "location" fields,
+                   List.assoc_opt "value" fields
+             with
+             | Some (`String location), Some value ->
+               Some (location, canonical_value_json value)
+             | _ -> None)
+          | _ -> None)
+      |> List.sort (fun (left, _) (right, _) -> String.compare left right)
+      |> List.map (fun (location, value) ->
+          assoc [("location", str location); ("value", value)])
+    | _ -> []
+  in
+  list entries
+
 let post_pre_global_surface global =
   assoc [
     ("file", file global.Global.file);
     ("icfg", icfg global.Global.icfg);
     ("callgraph", callgraph global);
     ("mem", memory global.Global.mem);
+  ]
+
+let post_pre_global_fingerprint_surface global =
+  assoc [
+    ("file", normalize_json (file global.Global.file));
+    ("icfg", normalize_json (icfg global.Global.icfg));
+    ("callgraph", normalize_json (callgraph global));
+    ("mem", canonical_memory_json (memory global.Global.mem));
   ]
 
 let linking_identity files global =
@@ -1036,7 +1182,7 @@ let linking_identity files global =
     |> List.map str
     |> list
   in
-  let surface = post_pre_global_surface global in
+  let surface = post_pre_global_fingerprint_surface global in
   let run_surface =
     assoc [
       ("files", list (List.map str files));
