@@ -46,6 +46,11 @@ let sorted_strings xs =
 let json_string_list xs =
   xs |> sorted_strings |> List.map str |> list
 
+let starts_with prefix value =
+  let prefix_length = String.length prefix in
+  String.length value >= prefix_length
+  && String.sub value 0 prefix_length = prefix
+
 let type_id typ =
   "type:" ^
   Digest.to_hex (Digest.string (Marshal.to_string (Sparrow_cil.typeSig typ) []))
@@ -572,6 +577,17 @@ let callgraph global =
     ("transitive_edges", list transitive_edges);
   ]
 
+let rec type_ids_in_json acc = function
+  | `Assoc fields ->
+    let acc =
+      match List.assoc_opt "id" fields with
+      | Some (`String value) when starts_with "type:" value -> value :: acc
+      | _ -> acc
+    in
+    List.fold_left (fun acc (_, value) -> type_ids_in_json acc value) acc fields
+  | `List values -> List.fold_left type_ids_in_json acc values
+  | _ -> acc
+
 let rec loc_id = function
   | Loc.GVar (name, _) -> "gvar:" ^ name
   | Loc.LVar (pid, name, _) -> "lvar:" ^ pid ^ ":" ^ name
@@ -771,11 +787,22 @@ let identities ?(extra_locs = []) global =
     |> sort_by type_id
     |> uniq_sorted (fun x y -> compare (type_id x) (type_id y))
   in
+  let surface_type_ids =
+    type_ids_in_json [] (file global.Global.file)
+    |> fun acc -> type_ids_in_json acc (icfg global.Global.icfg)
+    |> sorted_strings
+  in
+  let typed_type_ids = List.map type_id types |> sorted_strings in
+  let extra_type_ids =
+    List.filter (fun type_id -> not (List.mem type_id typed_type_ids))
+      surface_type_ids
+  in
+  let type_id_identity type_id = assoc [("id", str type_id)] in
   assoc [
     ("procedures", list (List.map (fun pid -> assoc [("id", str pid)]) pids));
     ("nodes", list (List.map json_node nodes));
     ("locations", list (List.map loc_json locs));
-    ("types", list (List.map json_type types));
+    ("types", list (List.map json_type types @ List.map type_id_identity extra_type_ids));
   ]
 
 let options_metadata () =
