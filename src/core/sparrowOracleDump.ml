@@ -1037,7 +1037,15 @@ let is_type_object fields =
       | _ -> false)
     fields
 
+let is_source_location_json = function
+  | `Assoc fields ->
+    List.mem_assoc "file" fields
+    && (List.mem_assoc "line" fields || List.mem_assoc "display" fields)
+  | _ -> false
+
 let rec normalize_json = function
+  | `Assoc _ as object_json when is_source_location_json object_json ->
+    `Null
   | `Assoc fields ->
     let type_object = is_type_object fields in
     fields
@@ -1045,6 +1053,7 @@ let rec normalize_json = function
         key <> "pretty"
         && key <> "display"
         && not (type_object && key = "text"))
+    |> List.filter (fun (_, value) -> not (is_source_location_json value))
     |> List.map (fun (key, value) -> (key, normalize_json value))
     |> List.sort (fun (left, _) (right, _) -> compare left right)
     |> fun fields -> `Assoc fields
