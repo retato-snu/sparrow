@@ -48,6 +48,19 @@ let update : update_mode -> Spec.t -> Global.t -> PowLoc.t -> Val.t -> Mem.t -> 
   if can_strong_update mode spec global locs then Mem.strong_update locs v mem
   else Mem.weak_update locs v mem
 
+let transfer_hook = ref (fun _ _ _ _ _ -> None)
+
+let with_transfer_hook hook f =
+  let previous = !transfer_hook in
+  transfer_hook := hook;
+  try
+    let result = f () in
+    transfer_hook := previous;
+    result
+  with exn ->
+    transfer_hook := previous;
+    raise exn
+
 (* ********************************** *
  * Semantic functions for expressions *
  * ********************************** *)
@@ -811,6 +824,9 @@ let bind_arg_lvars_set : update_mode -> Spec.t -> Global.t -> (Loc.t list) BatSe
 let run : update_mode -> Spec.t -> Node.t -> Mem.t * Global.t -> Mem.t * Global.t
 = fun mode spec node (mem, global) ->
   let pid = Node.get_pid node in
+  match !transfer_hook mode spec node mem global with
+  | Some result -> result
+  | None ->
   match InterCfg.cmdof global.icfg node with
   | IntraCfg.Cmd.Cset (l, e, loc) ->
       (update mode spec global (eval_lv ~spec pid l mem) (eval ~spec pid e mem) mem, global)
