@@ -15,6 +15,9 @@ sig
   module Table : MapDom.CPO with type t = MapDom.MakeCPO(BasicDom.Node)(Dom).t and type A.t = BasicDom.Node.t and type B.t = Dom.t
   module Spec : Spec.S with type Dom.t = Dom.t and type Dom.A.t = Dom.A.t and type Dom.PowA.t = Dom.PowA.t
   val clear_cache : unit -> unit
+  val perform_with_transfer_scope :
+    (BasicDom.Node.t -> (unit -> Dom.t * Global.t) -> Dom.t * Global.t) ->
+    Spec.t -> Global.t -> Global.t * Table.t * Table.t
   val perform : Spec.t -> Global.t -> Global.t * Table.t * Table.t
 end
 

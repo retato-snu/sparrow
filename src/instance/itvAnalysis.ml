@@ -339,3 +339,20 @@ let do_analysis : Global.t -> Global.t * Table.t * Table.t * Report.query list
   |> opt !Options.marshal_out marshal_out
   |> StepManager.stepf true "Generate Alarm Report" (fun (global,inputof,outputof) ->
       (global,inputof,outputof,inspect_alarm global spec inputof))
+
+let do_analysis_with_sparse_transfer_hook hook global =
+  let _ = prerr_memory_usage () in
+  let locset = get_locset global.mem in
+  let locset_fs = PartialFlowSensitivity.select global locset in
+  let unsound_lib = UnsoundLib.collect global in
+  let unsound_update = (!Options.bugfinder >= 2) in
+  let unsound_bitwise = (!Options.bugfinder >= 1) in
+  let spec = { Spec.empty with
+    Spec.locset; Spec.locset_fs; premem = global.mem; Spec.unsound_lib;
+    Spec.unsound_update; Spec.unsound_bitwise; } in
+  let transfer_scope _node f = ItvSem.with_transfer_hook hook f in
+  cond !Options.marshal_in marshal_in
+    (Analysis.perform_with_transfer_scope transfer_scope spec) global
+  |> opt !Options.marshal_out marshal_out
+  |> StepManager.stepf true "Generate Alarm Report" (fun (global,inputof,outputof) ->
+      (global,inputof,outputof,inspect_alarm global spec inputof))
