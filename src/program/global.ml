@@ -67,7 +67,7 @@ let remove_unreachable_functions : t -> t
 let init file =
   { file = file;
     icfg = InterCfg.init file;
-    callgraph = CallGraph.empty;
+    callgraph = CallGraph.create ();
     dump = Dump.empty;
     mem = ItvDom.Mem.bot;
     table = ItvDom.Table.bot; }

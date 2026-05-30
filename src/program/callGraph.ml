@@ -36,10 +36,12 @@ type t = {
   trans_calls : G.t
 }
 
-let empty = {
+let create () = {
   graph = G.create ();
   trans_calls = G.create ();
 }
+
+let empty = create ()
 
 let add_edge : BasicDom.Proc.t -> BasicDom.Proc.t -> t -> t
 = fun src dst g ->

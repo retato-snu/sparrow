@@ -14,6 +14,7 @@
 type t
 
 val empty : t
+val create : unit -> t
 
 val callees : InterCfg.pid -> t -> BasicDom.PowProc.t
 val trans_callees : InterCfg.pid -> t -> BasicDom.PowProc.t
