@@ -22,5 +22,6 @@ module Make (Sem : AbsSem.S) : S
   with type Dom.t = Sem.Dom.t
   and type Dom.A.t = Sem.Dom.A.t
   and type Dom.PowA.t = Sem.Dom.PowA.t
+  and type Spec.t = Sem.Spec.t
   and type Dom.Access.t = Sem.Dom.Access.t
   and type Dom.Access.Info.t = Sem.Dom.Access.Info.t

@@ -21,9 +21,19 @@ let l_clock = ref 0.0
 module type S =
 sig
   module Dom : InstrumentedMem.S
+  module DUGraph : Dug.S
+    with type Loc.t = Dom.A.t
+     and type PowLoc.t = Dom.PowA.t
+  module Worklist : Worklist.S with type DUGraph.t = DUGraph.t
   module Table : MapDom.CPO with type t = MapDom.MakeCPO(BasicDom.Node)(Dom).t and type A.t = BasicDom.Node.t and type B.t = Dom.t
   module Spec : Spec.S with type Dom.t = Dom.t and type Dom.A.t = Dom.A.t and type Dom.PowA.t = Dom.PowA.t
+  type analysis_state = Worklist.t * Global.t * Table.t * Table.t
   val clear_cache : unit -> unit
+  val perform_with_scopes :
+    (BasicDom.Node.t -> (unit -> Dom.t * Global.t) -> Dom.t * Global.t) ->
+    (Spec.t -> DUGraph.t -> DUGraph.node -> analysis_state ->
+     (unit -> analysis_state) -> analysis_state) ->
+    Spec.t -> Global.t -> Global.t * Table.t * Table.t
   val perform_with_transfer_scope :
     (BasicDom.Node.t -> (unit -> Dom.t * Global.t) -> Dom.t * Global.t) ->
     Spec.t -> Global.t -> Global.t * Table.t * Table.t
@@ -41,6 +51,7 @@ struct
   module Table = MapDom.MakeCPO (Node) (Sem.Dom)
   module Spec = Sem.Spec
   module PowLoc = Sem.Dom.PowA
+  type analysis_state = Worklist.t * Global.t * Table.t * Table.t
 
   let needwidening : DUGraph.node -> Worklist.t -> bool
   =fun idx wl -> Worklist.is_loopheader idx wl
@@ -123,6 +134,8 @@ struct
 
   let direct_transfer_scope _node f = f ()
 
+  let direct_analysis_scope _spec _dug _idx _state f = f ()
+
   (* fixpoint iterator specialized to the widening phase *)
   let analyze_node :
     (DUGraph.node -> (unit -> Dom.t * Global.t) -> Dom.t * Global.t) ->
@@ -142,6 +155,11 @@ struct
     |> Profiler.event "SparseAnalysis.get_unstable" (get_unstable dug idx works old_output)
     &> Profiler.event "SparseAnalysis.propagating" (propagate dug idx (works,inputof,outputof))
     |> (function None -> (works, global, inputof, outputof) | Some x -> x)
+
+  let analyze_node_with_analysis_scope analysis_scope transfer_scope spec dug idx
+      state =
+    analysis_scope spec dug idx state (fun () ->
+        analyze_node transfer_scope spec dug idx state)
 
 
   (* fixpoint iterator that can be used in both widening and narrowing phases *)
@@ -180,15 +198,22 @@ struct
       |> iterate f dug
 
   let widening :
+    ?analysis_scope:
+      (Spec.t -> DUGraph.t -> DUGraph.node -> analysis_state ->
+       (unit -> analysis_state) -> analysis_state) ->
     ?transfer_scope:(DUGraph.node -> (unit -> Dom.t * Global.t) -> Dom.t * Global.t) ->
     Spec.t -> DUGraph.t -> (Worklist.t * Global.t * Table.t * Table.t)
       -> (Worklist.t * Global.t * Table.t * Table.t)
-  =fun ?(transfer_scope=direct_transfer_scope) spec dug (worklist, global, inputof, outputof) ->
+  =fun ?(analysis_scope=direct_analysis_scope)
+       ?(transfer_scope=direct_transfer_scope) spec dug
+       (worklist, global, inputof, outputof) ->
     total_iterations := 0;
     worklist
     |> Worklist.push_set InterCfg.start_node (DUGraph.nodesof dug)
     |> (fun init_worklist ->
-        iterate (analyze_node transfer_scope spec) dug
+        iterate
+          (analyze_node_with_analysis_scope analysis_scope transfer_scope spec)
+          dug
           (init_worklist, global, inputof, outputof))
     |> (fun x -> my_prerr_endline ("\n#iteration in widening : " ^ string_of_int !total_iterations); x)
 
@@ -265,7 +290,7 @@ struct
     my_prerr_endline ("#total abstract locations  = " ^ string_of_int (PowLoc.cardinal spec.Spec.locset));
     my_prerr_endline ("#flow-sensitive abstract locations  = " ^ string_of_int (PowLoc.cardinal spec.Spec.locset_fs))
 
-  let perform_with_transfer_scope transfer_scope spec global =
+  let perform_with_scopes transfer_scope analysis_scope spec global =
     print_spec spec;
     let access = StepManager.stepf false "Access Analysis" (AccessAnalysis.perform global spec.Spec.locset (Sem.run Strong spec)) spec.Spec.premem in
     let dug = StepManager.stepf false "Def-use graph construction" SsaDug.make (global, access, spec.Spec.locset_fs) in
@@ -273,10 +298,13 @@ struct
     let worklist = StepManager.stepf false "Workorder computation" Worklist.init dug in
     (worklist, global, initialize spec global dug access, Table.empty)
     |> StepManager.stepf false "Fixpoint iteration with widening"
-      (widening ~transfer_scope spec dug)
+      (widening ~analysis_scope ~transfer_scope spec dug)
     |> finalize spec global dug access
     |> StepManager.stepf_opt !Options.narrow false "Fixpoint iteration with narrowing" (narrowing spec dug)
     |> (fun (_,global,inputof,outputof) -> (global, inputof, outputof))
+
+  let perform_with_transfer_scope transfer_scope spec global =
+    perform_with_scopes transfer_scope direct_analysis_scope spec global
 
   let perform : Spec.t -> Global.t -> Global.t * Table.t * Table.t
   =fun spec global ->
