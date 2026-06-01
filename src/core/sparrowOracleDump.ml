@@ -1604,8 +1604,39 @@ let sparse_identity_procs inputof outputof premem =
   |> collect_table_procs outputof
   |> collect_mem_procs premem
 
+let alarm_status_str = function
+  | Report.Proven -> "Proven"
+  | Report.UnProven -> "UnProven"
+  | Report.BotAlarm -> "BotAlarm"
+
+let alarm_exp_kind = function
+  | AlarmExp.ArrayExp _ -> "ArrayExp"
+  | AlarmExp.DerefExp _ -> "DerefExp"
+  | AlarmExp.DivExp _ -> "DivExp"
+  | AlarmExp.Strcpy _ -> "Strcpy"
+  | AlarmExp.Strcat _ -> "Strcat"
+  | AlarmExp.Strncpy _ -> "Strncpy"
+  | AlarmExp.Memcpy _ -> "Memcpy"
+  | AlarmExp.Memmove _ -> "Memmove"
+  | AlarmExp.AllocSize _ -> "AllocSize"
+
+let json_of_query (q : Report.query) =
+  assoc
+    ([ ("node", str (node_id q.Report.node));
+       ("procedure", str (InterCfg.Node.get_pid q.Report.node));
+       ("status", str (alarm_status_str q.Report.status));
+       ("exp_kind", str (alarm_exp_kind q.Report.exp));
+       ("exp", str (AlarmExp.to_string q.Report.exp));
+       ("location", location q.Report.loc);
+       ("desc", str q.Report.desc) ]
+     @ (match q.Report.allocsite with
+        | Some a -> [ ("allocsite", str (Allocsite.to_string a)) ]
+        | None -> []))
+
+let json_of_alarms queries = list (List.map json_of_query queries)
+
 let to_json_sparse files pre_global global inputof outputof access dug worklist
-    locset locset_fs premem unsound_lib unsound_update unsound_bitwise =
+    locset locset_fs premem unsound_lib unsound_update unsound_bitwise queries =
   let locset_json = json_of_locset locset in
   let locset_fs_json = json_of_locset locset_fs in
   let post_pre_global_json = post_pre_global_surface pre_global in
@@ -1624,6 +1655,7 @@ let to_json_sparse files pre_global global inputof outputof access dug worklist
     ("post_pre_global_fingerprint", linking_identity files pre_global);
     ("callgraph", callgraph global);
     ("dump", dump global.Global.dump);
+    ("alarms", json_of_alarms queries);
   ] in
   let extra_locs =
     sparse_identity_locs inputof outputof access dug locset locset_fs
@@ -1647,7 +1679,7 @@ let to_json_sparse files pre_global global inputof outputof access dug worklist
 
 let write_sparse path files global =
   reset_sparse_caches ();
-  let (global_anal, inputof, outputof, _) = ItvAnalysis.do_analysis global in
+  let (global_anal, inputof, outputof, queries) = ItvAnalysis.do_analysis global in
   let locset = ItvAnalysis.get_locset global.Global.mem in
   let locset_fs = PartialFlowSensitivity.select global locset in
   let unsound_lib = UnsoundLib.collect global in
@@ -1666,7 +1698,7 @@ let write_sparse path files global =
   try
     to_json_sparse files global global_anal inputof outputof access dug worklist
       locset locset_fs global.Global.mem unsound_lib unsound_update
-      unsound_bitwise
+      unsound_bitwise queries
     |> Yojson.Safe.pretty_to_channel chan;
     output_char chan '\n';
     close_out chan
