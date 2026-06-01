@@ -26,6 +26,7 @@ let reject_non_oracle_options () =
       | "--stage" | "--out" ->
         if i + 1 >= argc then fail_usage ("missing value for " ^ argv.(i))
         else loop (i + 2)
+      | "--harness" -> loop (i + 1)
       | arg when starts_with_dash arg ->
         fail_usage ("unsupported v1 oracle option: " ^ arg)
       | _ -> loop (i + 1)
@@ -42,10 +43,12 @@ let main () =
   reject_non_oracle_options ();
   let stage = ref None in
   let out = ref None in
-  let usage = "Usage: sparrow-oracle-dump --stage front_end|pre|sparse --out oracle.json source-files" in
+  let harness = ref false in
+  let usage = "Usage: sparrow-oracle-dump --stage front_end|pre|sparse --out oracle.json [--harness] source-files" in
   let specs = [
     ("--stage", Arg.String (fun s -> stage := Some (parse_stage s)), "Oracle stage");
     ("--out", Arg.String (fun s -> out := Some s), "Output oracle JSON path");
+    ("--harness", Arg.Set harness, "Synthesize a main calling all defined functions (for main-less library TUs)");
   ] in
   Arg.parse specs Frontend.args usage;
   let stage =
@@ -65,6 +68,7 @@ let main () =
     | SparrowOracleDump.Pre
     | SparrowOracleDump.Sparse ->
       StepManager.stepf true "Front-end" Frontend.parse ()
+      |> (if !harness then Frontend.build_main_harness else fun f -> f)
       |> Frontend.makeCFGinfo
       |> SparrowPipeline.pre_result
   in

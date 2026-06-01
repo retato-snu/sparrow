@@ -66,6 +66,46 @@ let makeCFGinfo : Sparrow_cil.file -> Sparrow_cil.file
   | _ -> ());
   f
 
+(* Library-entry harness: if the translation unit has no [main], synthesize one
+   that calls every function DEFINED in this TU with fresh uninitialized locals
+   (= top) as arguments. This is the standard way to analyze a library module
+   standalone (each exported function reachable from an entry with unknown
+   inputs). No-op when a [main] already exists, so it never changes the
+   whole-program path. Used by the modular report-equivalence validation
+   (Doc/measurements) to analyze gnulib TUs that lack a main. *)
+let build_main_harness : Sparrow_cil.file -> Sparrow_cil.file
+= fun f ->
+  let open Sparrow_cil in
+  let has_main =
+    foldGlobals f
+      (fun acc g -> match g with
+         | GFun (fd, _) when fd.svar.vname = "main" -> true
+         | _ -> acc)
+      false
+  in
+  if has_main then f
+  else begin
+    let main = emptyFunction "main" in
+    main.svar.vtype <- TFun (intType, Some [], false, []);
+    let calls =
+      foldGlobals f
+        (fun acc g -> match g with
+           | GFun (fd, _) when fd.svar.vname <> "main" ->
+             let actuals =
+               List.map
+                 (fun formal -> Lval (Var (makeTempVar main formal.vtype), NoOffset))
+                 fd.sformals
+             in
+             Call (None, Lval (Var fd.svar, NoOffset), actuals, locUnknown, locUnknown)
+             :: acc
+           | _ -> acc)
+        []
+    in
+    main.sbody <- mkBlock [ mkStmt (Instr (List.rev calls)) ];
+    f.globals <- f.globals @ [ GFun (main, locUnknown) ];
+    f
+  end
+
 (* true if the given function has variable number of arguments *)
 let is_varargs : string -> Sparrow_cil.file -> bool
 =fun fid file ->

@@ -16,5 +16,6 @@ val args : string -> unit
 val parseOneFile : string -> Sparrow_cil.file
 val parse : unit -> Sparrow_cil.file
 val makeCFGinfo : Sparrow_cil.file -> Sparrow_cil.file
+val build_main_harness : Sparrow_cil.file -> Sparrow_cil.file
 val is_varargs : string -> Sparrow_cil.file -> bool
 val inline : Global.t -> bool
