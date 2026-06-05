@@ -216,6 +216,7 @@ ApiMap.empty
 |> ApiMap.add "fread" {arg_typs = [buf_q; Skip; Size; Skip]; ret_typ = SizeArg}
 |> ApiMap.add "write" {arg_typs = [Skip; arr_src_q; Size]; ret_typ = SizeArg}
 |> ApiMap.add "fwrite" {arg_typs = [arr_src_q; Skip; Size; Skip]; ret_typ = SizeArg}
+|> ApiMap.add "fputs_unlocked" {arg_typs = [Skip; Skip]; ret_typ = ones}
 |> ApiMap.add "recv" {arg_typs = [Skip; buf_q; Size; Skip]; ret_typ = SizeArg}
 |> ApiMap.add "send" {arg_typs = [Skip; arr_src_q; Size; Skip]; ret_typ = SizeArg}
 |> ApiMap.add "nl_langinfo" {arg_typs = [Skip]; ret_typ = int_v}
