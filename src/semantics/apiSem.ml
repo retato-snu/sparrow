@@ -161,6 +161,7 @@ ApiMap.empty
 |> ApiMap.add "_IO_getc" {arg_typs = [Skip]; ret_typ = tainted_v}
 |> ApiMap.add "__errno_location" {arg_typs = []; ret_typ = int_arr}
 |> ApiMap.add "socket" {arg_typs = [Skip; Skip; Skip]; ret_typ = int_v}
+|> ApiMap.add "atexit" {arg_typs = [Skip]; ret_typ = ones}
 |> ApiMap.add "access" {arg_typs = [Skip; Skip]; ret_typ = ones}
 |> ApiMap.add "chown" {arg_typs = [Skip; Skip; Skip]; ret_typ = ones}
 |> ApiMap.add "uname" {arg_typs = [Skip]; ret_typ = ones}
