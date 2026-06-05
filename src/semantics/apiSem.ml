@@ -249,6 +249,7 @@ ApiMap.empty
 |> ApiMap.add "dgettext" {arg_typs = [Skip; Skip]; ret_typ = int_arr}
 |> ApiMap.add "dcgettext" {arg_typs = [Skip; Skip; Skip]; ret_typ = int_arr}
 |> ApiMap.add "bindtextdomain" {arg_typs = [Skip; Skip]; ret_typ = int_arr}
+|> ApiMap.add "textdomain" {arg_typs = [Skip]; ret_typ = int_arr}
 |> ApiMap.add "mktime" {arg_typs = [Skip]; ret_typ = int_v}
 |> ApiMap.add "localtime" {arg_typs = [Skip]; ret_typ = AllocStruct}
 |> ApiMap.add "ctime" {arg_typs = [Skip]; ret_typ = int_arr}
