@@ -188,6 +188,7 @@ ApiMap.empty
 |> ApiMap.add "stat" {arg_typs = [Skip; StructPtr]; ret_typ = ones}
 |> ApiMap.add "fstat" {arg_typs = [Skip; StructPtr]; ret_typ = ones}
 |> ApiMap.add "fstatat" {arg_typs = [Skip; Skip; StructPtr; Skip]; ret_typ = ones}
+|> ApiMap.add "fchmodat" {arg_typs = [Skip; Skip; Skip; Skip]; ret_typ = ones}
 |> ApiMap.add "lstat" {arg_typs = [Skip; StructPtr]; ret_typ = ones}
 |> ApiMap.add "strdup" {arg_typs = [arr_src]; ret_typ = AllocDst}
 |> ApiMap.add "xstrdup" {arg_typs = [arr_src]; ret_typ = AllocDst}
