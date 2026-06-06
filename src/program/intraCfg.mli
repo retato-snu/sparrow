@@ -45,6 +45,7 @@ module Cmd : sig
 
   val fromCilStmt : Sparrow_cil.stmtkind -> t
   val to_string : t -> string
+  val location_of : t -> Sparrow_cil.location
 end
 
 (** Abstract type of intra-procedural CFG *)

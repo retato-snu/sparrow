@@ -24,6 +24,7 @@ let list xs = `List xs
 let str x = `String x
 let int x = `Int x
 let bool x = `Bool x
+let float x = `Float x
 
 let opt f = function
   | None -> `Null
@@ -1635,6 +1636,19 @@ let json_of_query (q : Report.query) =
 
 let json_of_alarms queries = list (List.map json_of_query queries)
 
+(* Fixpoint cost metrics captured by the last sparse analysis run, for
+   comparing worklist-order strategies (e.g. wto vs file). *)
+let json_of_stats () =
+  assoc [
+    ("worklist_order", str !Options.worklist_order);
+    ("preanalysis_order", str !Options.preanalysis_order);
+    ("pre_iters", int !PreAnalysis.last_pre_iters);
+    ("widen_iters", int !SparseAnalysis.last_widen_iters);
+    ("narrow_iters", int !SparseAnalysis.last_narrow_iters);
+    ("widen_time", float !SparseAnalysis.widen_time);
+    ("narrow_time", float !SparseAnalysis.narrow_time);
+  ]
+
 let to_json_sparse files pre_global global inputof outputof access dug worklist
     locset locset_fs premem unsound_lib unsound_update unsound_bitwise queries =
   let locset_json = json_of_locset locset in
@@ -1651,6 +1665,7 @@ let to_json_sparse files pre_global global inputof outputof access dug worklist
     ("access", json_of_access global access);
     ("dug", json_of_dug global dug);
     ("worklist", json_of_worklist_info worklist);
+    ("stats", json_of_stats ());
     ("post_pre_global", post_pre_global_json);
     ("post_pre_global_fingerprint", linking_identity files pre_global);
     ("callgraph", callgraph global);
@@ -1693,7 +1708,17 @@ let write_sparse path files global =
   } in
   let access = MyAccessAnalysis.perform global locset (ItvSem.run AbsSem.Strong spec) global.Global.mem in
   let dug = MySsaDug.make (global, access, locset_fs) in
-  let worklist = MyWorklist.init dug in
+  (* mirror the worklist-order strategy used by the analysis so the dumped
+     order snapshot reflects what actually drove the fixpoint *)
+  let file_of_opt =
+    match !Options.worklist_order with
+    | "file" ->
+      Some (fun n ->
+        try (InterCfg.cmdof global.Global.icfg n |> IntraCfg.Cmd.location_of).Sparrow_cil.file
+        with _ -> "")
+    | _ -> None
+  in
+  let worklist = MyWorklist.init ?file_of:file_of_opt dug in
   let chan = open_out path in
   try
     to_json_sparse files global global_anal inputof outputof access dug worklist

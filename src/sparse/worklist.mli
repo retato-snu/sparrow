@@ -25,7 +25,7 @@ sig
     sccs : BasicDom.Node.t list list;
     loop_headers : BasicDom.Node.t list;
   }
-  val init : DUGraph.t -> t
+  val init : ?file_of:(BasicDom.Node.t -> string) -> DUGraph.t -> t
   val pick : t -> (BasicDom.Node.t * t) option
   val push : BasicDom.Node.t -> BasicDom.Node.t -> t -> t
   val push_set : BasicDom.Node.t -> BasicDom.Node.t BatSet.t -> t -> t

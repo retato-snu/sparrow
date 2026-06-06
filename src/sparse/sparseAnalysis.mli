@@ -9,6 +9,13 @@
 (*                                                                     *)
 (***********************************************************************)
 (** Sparse analysis framework *)
+
+(** {2 Fixpoint cost metrics captured by the last analysis run} *)
+val last_widen_iters : int ref
+val last_narrow_iters : int ref
+val widen_time : float ref
+val narrow_time : float ref
+
 module type S =
 sig
   module Dom : InstrumentedMem.S

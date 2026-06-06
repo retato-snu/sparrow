@@ -48,6 +48,8 @@ val unsound_alloc : bool ref
 (** {2 Main Analysis } *)
 
 val narrow : bool ref
+val worklist_order : string ref
+val preanalysis_order : string ref
 val scaffold : bool ref
 val int_overflow : bool ref
 

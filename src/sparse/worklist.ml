@@ -28,7 +28,7 @@ sig
     sccs : BasicDom.Node.t list list;
     loop_headers : BasicDom.Node.t list;
   }
-  val init : DUGraph.t -> t
+  val init : ?file_of:(BasicDom.Node.t -> string) -> DUGraph.t -> t
   val pick : t -> (BasicDom.Node.t * t) option
   val push : BasicDom.Node.t -> BasicDom.Node.t -> t -> t
   val push_set : BasicDom.Node.t -> BasicDom.Node.t BatSet.t -> t -> t
@@ -165,7 +165,25 @@ module Make (DUGraph : Dug.S) = struct
 
     let is_loopheader here info = BatSet.mem here info.loopheads
 
-    let perform g =
+    (* File-prioritized order: shift every node's order (and headorder) by a
+       per-file offset so that all nodes of one source file are processed before
+       any node of the next, while the original WTO order is preserved within a
+       file (the offset cancels out for same-file comparisons). *)
+    let apply_file_priority file_of wo ho =
+      let files =
+        BatMap.foldi (fun n _ acc -> BatSet.add (file_of n) acc) wo BatSet.empty in
+      let rank =
+        BatSet.fold (fun f (i, m) -> (i + 1, BatMap.add f i m)) files (0, BatMap.empty)
+        |> snd in
+      let max_o = BatMap.foldi (fun _ (o, _) m -> max o m) wo 0 in
+      let max_h = BatMap.foldi (fun _ h m -> max h m) ho 0 in
+      let stride = (max max_o max_h) + 1 in
+      let off n = (BatMap.find (file_of n) rank) * stride in
+      let wo' = BatMap.mapi (fun n (o, h) -> (off n + o, h)) wo in
+      let ho' = BatMap.mapi (fun n h -> off n + h) ho in
+      (wo', ho')
+
+    let perform ?file_of g =
       let (ng, i2n) = make g in
       let sccs = List.rev (NGraph.scc_list ng) in
       Profiler.start_event "Worklist.get_order";
@@ -193,6 +211,11 @@ module Make (DUGraph : Dug.S) = struct
       let ho = trans_map trans_k (fun _ v -> v) ho in
       let sccs = List.map (List.map trans_k) sccs in
       Profiler.finish_event "Worklist.trans";
+      let (wo, ho) =
+        match file_of with
+        | None -> (wo, ho)
+        | Some file_of -> apply_file_priority file_of wo ho
+      in
       { order = wo; headorder = ho; loopheads = lhs; sccs }
   end
 
@@ -259,7 +282,7 @@ module Make (DUGraph : Dug.S) = struct
       queue bInnerLoop succ works
     ) succs ws
 
-  let init dug = { set = S.empty; order = Workorder.perform dug }
+  let init ?file_of dug = { set = S.empty; order = Workorder.perform ?file_of dug }
 
   let is_loopheader idx ws = Workorder.is_loopheader idx ws.order
 

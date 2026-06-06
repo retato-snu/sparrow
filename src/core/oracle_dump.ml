@@ -23,7 +23,7 @@ let reject_non_oracle_options () =
     if i >= argc then ()
     else
       match argv.(i) with
-      | "--stage" | "--out" ->
+      | "--stage" | "--out" | "--worklist_order" | "--preanalysis_order" ->
         if i + 1 >= argc then fail_usage ("missing value for " ^ argv.(i))
         else loop (i + 2)
       | "--harness" -> loop (i + 1)
@@ -49,6 +49,8 @@ let main () =
     ("--stage", Arg.String (fun s -> stage := Some (parse_stage s)), "Oracle stage");
     ("--out", Arg.String (fun s -> out := Some s), "Output oracle JSON path");
     ("--harness", Arg.Set harness, "Synthesize a main calling all defined functions (for main-less library TUs)");
+    ("--worklist_order", Arg.Set_string Options.worklist_order, "Worklist order strategy: wto (default) | file");
+    ("--preanalysis_order", Arg.Set_string Options.preanalysis_order, "Pre-analysis node traversal: default | file");
   ] in
   Arg.parse specs Frontend.args usage;
   let stage =

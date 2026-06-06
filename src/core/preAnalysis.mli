@@ -9,4 +9,5 @@
 (*                                                                     *)
 (***********************************************************************)
 
+val last_pre_iters : int ref
 val perform : Global.t -> Global.t

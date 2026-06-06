@@ -42,6 +42,8 @@ let taint = ref false
 (* Analyzer *)
 let nobar = ref false
 let narrow = ref false
+let worklist_order = ref "wto"
+let preanalysis_order = ref "default"
 let profile = ref false
 let scaffold = ref true
 
@@ -107,6 +109,8 @@ let opts =
   ("-taint", (Arg.Set taint), "Do taint analysis");
   ("-profile", (Arg.Set profile), "Profiler");
   ("-narrow", (Arg.Set narrow), "Do narrowing");
+  ("-worklist_order", (Arg.Set_string worklist_order), "Worklist order strategy: wto (default) | file (prioritize intra-file iteration)");
+  ("-preanalysis_order", (Arg.Set_string preanalysis_order), "Flow-insensitive pre-analysis iteration: default (global sweep+widen) | file (same, nodes grouped by file) | module (stabilize each file to a local fixpoint before the next)");
   ("-unsound_loop", (Arg.String (fun s -> unsound_loop := BatSet.add s !unsound_loop)), "Unsound loops");
   ("-unsound_lib", (Arg.String (fun s -> unsound_lib := BatSet.add s !unsound_lib)), "Unsound libs");
   ("-unsound_recursion", (Arg.Set unsound_recursion), "Unsound recursive calls");

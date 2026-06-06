@@ -17,6 +17,11 @@ open Dug
 let total_iterations = ref 0
 let g_clock = ref 0.0
 let l_clock = ref 0.0
+(* cost metrics captured per phase for measurement / oracle dump *)
+let last_widen_iters = ref 0
+let last_narrow_iters = ref 0
+let widen_time = ref 0.0
+let narrow_time = ref 0.0
 
 module type S =
 sig
@@ -208,6 +213,7 @@ struct
        ?(transfer_scope=direct_transfer_scope) spec dug
        (worklist, global, inputof, outputof) ->
     total_iterations := 0;
+    let t0 = Sys.time () in
     worklist
     |> Worklist.push_set InterCfg.start_node (DUGraph.nodesof dug)
     |> (fun init_worklist ->
@@ -215,17 +221,24 @@ struct
           (analyze_node_with_analysis_scope analysis_scope transfer_scope spec)
           dug
           (init_worklist, global, inputof, outputof))
-    |> (fun x -> my_prerr_endline ("\n#iteration in widening : " ^ string_of_int !total_iterations); x)
+    |> (fun x ->
+        widen_time := Sys.time () -. t0;
+        last_widen_iters := !total_iterations;
+        my_prerr_endline ("\n#iteration in widening : " ^ string_of_int !total_iterations); x)
 
   let narrowing ?(initnodes=BatSet.empty) : Spec.t -> DUGraph.t -> (Worklist.t * Global.t * Table.t * Table.t)
       -> (Worklist.t * Global.t * Table.t * Table.t)
   =fun spec dug (worklist, global, inputof, outputof) ->
     total_iterations := 0;
+    let t0 = Sys.time () in
     worklist
     |> Worklist.push_set InterCfg.start_node (if (BatSet.is_empty initnodes) then DUGraph.nodesof dug else initnodes)
     |> (fun init_worklist -> iterate (analyze_node_with_otable (Dom.narrow, fun x y -> Dom.le y x) spec)
         dug (init_worklist, global, inputof, outputof))
-    |> (fun x -> my_prerr_endline ("#iteration in narrowing : " ^ string_of_int !total_iterations); x)
+    |> (fun x ->
+        narrow_time := Sys.time () -. t0;
+        last_narrow_iters := !total_iterations;
+        my_prerr_endline ("#iteration in narrowing : " ^ string_of_int !total_iterations); x)
 
   let print_dug (access,global,dug) =
     if !Options.dug then
@@ -295,7 +308,18 @@ struct
     let access = StepManager.stepf false "Access Analysis" (AccessAnalysis.perform global spec.Spec.locset (Sem.run Strong spec)) spec.Spec.premem in
     let dug = StepManager.stepf false "Def-use graph construction" SsaDug.make (global, access, spec.Spec.locset_fs) in
     print_dug (access,global,dug);
-    let worklist = StepManager.stepf false "Workorder computation" Worklist.init dug in
+    let file_of_opt =
+      match !Options.worklist_order with
+      | "file" ->
+        Some (fun n ->
+          try (InterCfg.cmdof global.icfg n |> IntraCfg.Cmd.location_of).Sparrow_cil.file
+          with _ -> "")
+      | _ -> None
+    in
+    let worklist =
+      StepManager.stepf false "Workorder computation"
+        (fun dug -> Worklist.init ?file_of:file_of_opt dug) dug
+    in
     (worklist, global, initialize spec global dug access, Table.empty)
     |> StepManager.stepf false "Fixpoint iteration with widening"
       (widening ~analysis_scope ~transfer_scope spec dug)
