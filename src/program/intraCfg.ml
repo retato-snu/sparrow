@@ -685,7 +685,7 @@ let insert_return_nodes : t -> t
   List.fold_left (fun g c ->
     match find_cmd c g with
       Cmd.Ccall (_, Lval (Var varinfo, _), _, _)
-      when varinfo.vname = "exit" || varinfo.vname = "abort" ->
+      when varinfo.vname = "exit" || varinfo.vname = "_exit" || varinfo.vname = "abort" ->
         let r = returnof c g in
         let n = Node.make () in
         remove_edge c r g
