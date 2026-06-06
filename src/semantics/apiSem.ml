@@ -224,6 +224,7 @@ ApiMap.empty
 |> ApiMap.add "fwrite" {arg_typs = [arr_src_q; Skip; Size; Skip]; ret_typ = SizeArg}
 |> ApiMap.add "fprintf" {arg_typs = [Skip; Skip]; ret_typ = int_v}
 |> ApiMap.add "printf" {arg_typs = [Skip]; ret_typ = int_v}
+|> ApiMap.add "vfprintf" {arg_typs = [Skip; Skip; Skip]; ret_typ = int_v}
 |> ApiMap.add "fputs" {arg_typs = [Skip; Skip]; ret_typ = ones}
 |> ApiMap.add "fputs_unlocked" {arg_typs = [Skip; Skip]; ret_typ = ones}
 |> ApiMap.add "putchar_unlocked" {arg_typs = [Skip]; ret_typ = ones}
