@@ -342,6 +342,18 @@ let model_realloc mode spec node (lvo, exps) (mem, global) =
     end
   | _ -> (mem,global)
 
+let model_xmalloc mode spec node (lvo, exps) (mem, global) =
+  let pid = Node.get_pid node in
+  match lvo with
+  | Some lv ->
+    begin
+      match exps with
+      | size::_ ->
+        (update mode spec global (eval_lv ~spec pid lv mem) (eval_array_alloc ~spec node size false mem) mem, global)
+      | _ -> raise (Failure "Error: arguments of xmalloc are not given")
+    end
+  | _ -> (mem,global)
+
 let model_calloc mode spec node (lvo, exps) (mem, global) =
   let pid = Node.get_pid node in
   match lvo with
@@ -802,6 +814,8 @@ let handle_undefined_functions mode spec node pid (lvo,f,exps) (mem,global) loc 
   | "sparrow_assume" -> (prune mode spec global pid (List.hd exps) mem, global)
   | "sparrow_array_init" -> sparrow_array_init mode spec node pid exps (mem, global)
   | "strlen" -> model_strlen mode spec pid (lvo, exps) (mem, global)
+  | "xmalloc" -> model_xmalloc mode spec node (lvo, exps) (mem, global)
+  | "xrealloc" -> model_realloc mode spec node (lvo, exps) (mem, global)
   | "realloc" -> model_realloc mode spec node (lvo, exps) (mem, global)
   | "calloc" -> model_calloc mode spec node (lvo, exps) (mem, global)
   | _ -> scaffolded_functions mode spec node pid (lvo, f, exps) (mem, global)

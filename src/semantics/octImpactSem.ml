@@ -142,6 +142,14 @@ let model_realloc mode global node pid lvo exps ptrmem (mem, global) =
       alloc mode global ptrmem pid lv ptrs size mem
   | _ -> mem
 
+let model_xmalloc mode global node pid lvo exps ptrmem (mem, global) =
+  match lvo, exps with
+    (Some l, size::_) ->
+      let lv = ItvSem.eval_lv pid l ptrmem |> PowOctLoc.of_locs in
+      let ptrs = ItvSem.eval_array_alloc node size false ptrmem |> ItvDom.Val.allocsites_of_val |> PowOctLoc.of_sizes in
+      alloc mode global ptrmem pid lv ptrs size mem
+  | _ -> mem
+
 let model_calloc mode global node pid lvo exps ptrmem (mem, global) =
   match lvo, exps with
     (Some l, size::_) ->
@@ -220,6 +228,8 @@ let handle_undefined_functions mode node pid (lvo,f,exps) ptrmem (mem,global) lo
   | "strlen" -> model_strlen mode pid lvo exps ptrmem (mem, global)
   | "getenv" -> model_input mode pid lvo ptrmem (mem,global)
   | "strdup" -> model_strdup mode pid node lvo exps ptrmem (mem,global)
+  | "xmalloc" -> model_xmalloc mode global node pid lvo exps ptrmem (mem, global)
+  | "xrealloc" -> model_realloc mode global node pid lvo exps ptrmem (mem, global)
   | "realloc" -> model_realloc mode global node pid lvo exps ptrmem (mem, global)
   | "calloc" -> model_calloc mode global node pid lvo exps ptrmem (mem, global)
   | _ ->

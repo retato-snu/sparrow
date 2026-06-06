@@ -107,6 +107,8 @@ ApiMap.empty
 |> ApiMap.add "strerror" {arg_typs = [Skip]; ret_typ = int_arr}
 |> ApiMap.add "strerror_r" {arg_typs = [Skip; buf_q; Size]; ret_typ = IntOrBufOrAllocConst}
 |> ApiMap.add "strlen" {arg_typs = [arr_src]; ret_typ = int_v}
+|> ApiMap.add "xmalloc" {arg_typs = [Size]; ret_typ = int_arr}
+|> ApiMap.add "xrealloc" {arg_typs = [Skip; Size]; ret_typ = int_arr}
 
 (* Character conversion (<ctype.h>) *)
 |> ApiMap.add "tolower" {arg_typs = [v_src]; ret_typ = TopWithSrcTaint}
