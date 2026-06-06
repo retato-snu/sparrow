@@ -229,6 +229,7 @@ ApiMap.empty
 |> ApiMap.add "putchar_unlocked" {arg_typs = [Skip]; ret_typ = ones}
 |> ApiMap.add "putc_unlocked" {arg_typs = [Skip; Skip]; ret_typ = ones}
 |> ApiMap.add "ferror_unlocked" {arg_typs = [Skip]; ret_typ = int_v}
+|> ApiMap.add "fflush" {arg_typs = [Skip]; ret_typ = int_v}
 |> ApiMap.add "fflush_unlocked" {arg_typs = [Skip]; ret_typ = int_v}
 |> ApiMap.add "puts" {arg_typs = [Skip]; ret_typ = ones}
 |> ApiMap.add "recv" {arg_typs = [Skip; buf_q; Size; Skip]; ret_typ = SizeArg}
