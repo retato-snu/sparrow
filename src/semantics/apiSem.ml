@@ -23,6 +23,7 @@ type ret_typ =
   | TopWithSrcTaint (* Top itv & taintness of Src argument returned *)
   | DstArg (* Dst argument returned *)
   | BufArg (* Buf argument returned *)
+  | IntOrBufOrAllocConst (* Unknown int, buffer argument, or static string returned *)
   | AllocConst (* New block, filled with given abstract val. *)
   | AllocBuf (* New block, filled with user input *)
   | AllocDst (* New block, filled with Src argument *)
@@ -104,6 +105,7 @@ ApiMap.empty
 (* FIXME: Do not assign v_src to the 1st arg. Do assign it to *dst_q
  * |> ApiMap.add "memset" {arg_typs = [dst_q; v_src; Size]; ret_typ = DstArg} *)
 |> ApiMap.add "strerror" {arg_typs = [Skip]; ret_typ = int_arr}
+|> ApiMap.add "strerror_r" {arg_typs = [Skip; buf_q; Size]; ret_typ = IntOrBufOrAllocConst}
 |> ApiMap.add "strlen" {arg_typs = [arr_src]; ret_typ = int_v}
 
 (* Character conversion (<ctype.h>) *)

@@ -733,6 +733,10 @@ let produce_ret mode spec node ret_typ va_src_flag
   | ApiSem.BufArg -> (* Buf argument returned *)
     let _ = assert (List.length buf_vals = 1) in
     (mem, List.hd buf_vals)
+  | ApiSem.IntOrBufOrAllocConst ->
+    let _ = assert (List.length buf_vals = 1) in
+    let mem, alloc_v = gen_block mode spec node Val.itv_top (mem, global) in
+    (mem, Val.join Val.itv_top (Val.join (List.hd buf_vals) alloc_v))
   | ApiSem.AllocConst -> (* New block, filled with given abstract val. *)
     gen_block mode spec node Val.itv_top (mem, global)
   | ApiSem.AllocDst -> (* New block, filled with Src argument *)
