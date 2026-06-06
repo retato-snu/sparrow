@@ -211,6 +211,7 @@ ApiMap.empty
 |> ApiMap.add "fopen" {arg_typs = [Skip; Skip]; ret_typ = int_v}
 |> ApiMap.add "lseek" {arg_typs = [Skip; Skip; Skip]; ret_typ = int_v}
 |> ApiMap.add "fseeko" {arg_typs = [Skip; Skip; Skip]; ret_typ = int_v}
+|> ApiMap.add "fileno" {arg_typs = [Skip]; ret_typ = int_v}
 |> ApiMap.add "__fpending" {arg_typs = [Skip]; ret_typ = int_v}
 |> ApiMap.add "__freading" {arg_typs = [Skip]; ret_typ = int_v}
 |> ApiMap.add "ftell" {arg_typs = [Skip]; ret_typ = int_v}
