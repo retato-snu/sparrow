@@ -169,6 +169,7 @@ ApiMap.empty
 |> ApiMap.add "atexit" {arg_typs = [Skip]; ret_typ = ones}
 |> ApiMap.add "access" {arg_typs = [Skip; Skip]; ret_typ = ones}
 |> ApiMap.add "chown" {arg_typs = [Skip; Skip; Skip]; ret_typ = ones}
+|> ApiMap.add "rpl_fchownat" {arg_typs = [Skip; Skip; Skip; Skip; Skip]; ret_typ = ones}
 |> ApiMap.add "uname" {arg_typs = [Skip]; ret_typ = ones}
 |> ApiMap.add "mkdir" {arg_typs = [Skip; Skip]; ret_typ = ones}
 |> ApiMap.add "mkfifo" {arg_typs = [Skip; Skip]; ret_typ = ones}
