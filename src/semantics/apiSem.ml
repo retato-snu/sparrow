@@ -181,6 +181,7 @@ ApiMap.empty
 |> ApiMap.add "getgid" {arg_typs = []; ret_typ = int_v}
 |> ApiMap.add "getegid" {arg_typs = []; ret_typ = int_v}
 |> ApiMap.add "geteuid" {arg_typs = []; ret_typ = int_v}
+|> ApiMap.add "gethostid" {arg_typs = []; ret_typ = int_v}
 |> ApiMap.add "getpwuid" {arg_typs = [Skip]; ret_typ = AllocStruct}
 |> ApiMap.add "htonl" {arg_typs = [v_src]; ret_typ = TopWithSrcTaint}
 |> ApiMap.add "htons" {arg_typs = [v_src]; ret_typ = TopWithSrcTaint}
