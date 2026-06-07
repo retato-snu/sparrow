@@ -374,7 +374,8 @@ let handle_undefined_functions mode packconf node pid (lvo,f,exps) ptrmem (mem,g
   | "realloc" -> model_realloc mode packconf node pid lvo exps ptrmem (mem, global)
   | "calloc" -> model_calloc mode packconf node pid lvo exps ptrmem (mem, global)
   | "getenv" -> model_input mode packconf pid lvo ptrmem (mem,global)
-  | "strdup" -> model_strdup mode packconf node pid lvo exps ptrmem (mem, global)
+  | "strdup" | "strndup" ->
+    model_strdup mode packconf node pid lvo exps ptrmem (mem, global)
   | _ -> model_unknown mode packconf node pid lvo f exps ptrmem (mem, global)
 
 let binding : update_mode -> Global.t -> ItvDom.Mem.t -> PackConf.t -> Proc.t -> (Loc.t list) BatSet.t -> Sparrow_cil.exp list -> Dom.t -> Dom.t

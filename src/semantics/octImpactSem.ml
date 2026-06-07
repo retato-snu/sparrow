@@ -227,7 +227,8 @@ let handle_undefined_functions mode node pid (lvo,f,exps) ptrmem (mem,global) lo
   | "sparrow_arg" -> sparrow_arg mode pid exps ptrmem (mem,global)
   | "strlen" -> model_strlen mode pid lvo exps ptrmem (mem, global)
   | "getenv" -> model_input mode pid lvo ptrmem (mem,global)
-  | "strdup" -> model_strdup mode pid node lvo exps ptrmem (mem,global)
+  | "strdup" | "strndup" ->
+    model_strdup mode pid node lvo exps ptrmem (mem,global)
   | "xmalloc" -> model_xmalloc mode global node pid lvo exps ptrmem (mem, global)
   | "xrealloc" -> model_realloc mode global node pid lvo exps ptrmem (mem, global)
   | "realloc" -> model_realloc mode global node pid lvo exps ptrmem (mem, global)

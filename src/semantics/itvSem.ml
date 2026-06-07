@@ -789,7 +789,8 @@ let scaffolded_functions mode spec node pid (lvo,f,exps) (mem, global) =
     | "sprintf" -> model_sprintf mode spec pid (lvo, exps) (mem, global)
     | "scanf" -> model_scanf mode spec pid exps (mem, global)
     | "getenv" -> model_input mode spec pid lvo (mem, global)
-    | "strdup" -> model_strdup mode spec node (lvo, exps) (mem, global)
+    | "strdup" | "strndup" ->
+      model_strdup mode spec node (lvo, exps) (mem, global)
     | "gettext" -> model_assign mode spec pid (lvo, exps) (mem, global)
     | "memcpy" -> model_memcpy mode spec pid (lvo, exps) (mem, global)
     | "getpwent" -> model_getpwent mode spec node pid lvo f (mem,global)

@@ -199,6 +199,7 @@ ApiMap.empty
 |> ApiMap.add "fchmodat" {arg_typs = [Skip; Skip; Skip; Skip]; ret_typ = ones}
 |> ApiMap.add "lstat" {arg_typs = [Skip; StructPtr]; ret_typ = ones}
 |> ApiMap.add "strdup" {arg_typs = [arr_src]; ret_typ = AllocDst}
+|> ApiMap.add "strndup" {arg_typs = [arr_src; Size]; ret_typ = AllocDst}
 |> ApiMap.add "xstrdup" {arg_typs = [arr_src]; ret_typ = AllocDst}
 |> ApiMap.add "xmlStrdup" {arg_typs = [arr_src]; ret_typ = AllocDst}
 |> ApiMap.add "g_strdup" {arg_typs = [arr_src]; ret_typ = AllocDst}
