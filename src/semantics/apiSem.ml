@@ -111,6 +111,7 @@ ApiMap.empty
 |> ApiMap.add "xrealloc" {arg_typs = [Skip; Size]; ret_typ = int_arr}
 |> ApiMap.add "quote" {arg_typs = [Skip]; ret_typ = int_arr}
 |> ApiMap.add "quotearg_colon" {arg_typs = [Skip]; ret_typ = int_arr}
+|> ApiMap.add "quotearg_n_style" {arg_typs = [Skip; Skip; Skip]; ret_typ = int_arr}
 
 (* Character conversion (<ctype.h>) *)
 |> ApiMap.add "tolower" {arg_typs = [v_src]; ret_typ = TopWithSrcTaint}
