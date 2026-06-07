@@ -255,6 +255,7 @@ ApiMap.empty
 |> ApiMap.add "readlink" {arg_typs = [arr_src; dst_q; Size]; ret_typ = int_v}
 |> ApiMap.add "open" {arg_typs = [Skip; Skip; Skip]; ret_typ = int_v}
 |> ApiMap.add "close" {arg_typs = [Skip]; ret_typ = int_v}
+|> ApiMap.add "link" {arg_typs = [Skip; Skip]; ret_typ = int_v}
 |> ApiMap.add "unlink" {arg_typs = [Skip]; ret_typ = int_v}
 |> ApiMap.add "select" {arg_typs = [Skip; Skip; Skip; Skip; Skip]; ret_typ = int_v}
 
