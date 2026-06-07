@@ -62,6 +62,13 @@ let add_call_edge : Node.t -> Proc.t -> t -> t
   in
   { g with call_edges = BatMap.add call_node callees g.call_edges }
 
+(* Replace the callee set of a call node (used by procedure cloning to retarget
+   a rewritten direct callsite from the original callee to its clone, instead
+   of leaving both as callees). *)
+let set_call_edge : Node.t -> ProcSet.t -> t -> t
+= fun call_node callees g ->
+  { g with call_edges = BatMap.add call_node callees g.call_edges }
+
 let get_callees : Node.t -> t -> ProcSet.t
 = fun call_node g ->
   try BatMap.find call_node g.call_edges with _ -> ProcSet.empty
@@ -92,6 +99,16 @@ let remove_function : pid -> t -> t
 let cfgof : t -> pid -> IntraCfg.t
 =fun g pid ->
   try BatMap.find pid g.cfgs with Not_found -> prerr_endline ("InterCfg.cfgof "^pid); raise Not_found
+
+(* Add (or replace) the IntraCfg.t bound to [pid].  Used by call-site
+   polyvariance (procedure cloning): a clone is the callee's IntraCfg.t
+   re-keyed under a fresh context pid.  Re-keying is what makes the clone's
+   nodes resolve to LVar(pid,_) in the semantics. *)
+let add_cfg : pid -> IntraCfg.t -> t -> t
+=fun pid cfg g -> { g with cfgs = BatMap.add pid cfg g.cfgs }
+
+let mem_cfg : pid -> t -> bool
+=fun pid g -> BatMap.mem pid g.cfgs
 
 let cmdof : t -> Node.t -> IntraCfg.cmd
 =fun g (pid,node) -> IntraCfg.find_cmd node (cfgof g pid)
@@ -236,6 +253,31 @@ let insert_salloc : t -> (string, lval) BatMap.t -> t
         IntraCfg.add_new_node entry cmd next g
     ) strmap _G_ in
   { icfg with cfgs = BatMap.add global_proc _G_with_sallocs icfg.cfgs}
+
+(* Insert a Cfalloc(Var fvar, fd, _) node into the synthetic [_G_] procedure,
+   right after its entry.  Used by procedure cloning to define the clone's
+   function-pointer global flow-sensitively (mirroring how Sparrow defines a
+   real function's pointer via process_fundecl), so that during the flow-
+   sensitive fixpoint [ItvSem.eval (Lval(Var fvar)) mem] resolves the clone's
+   pid.  Without this, the clone pointer lives only in the flow-insensitive
+   pre-mem and the rewritten direct callsite resolves to bot during the
+   fixpoint, dropping the clone (and the caller body past it) out of the
+   analysis. *)
+let insert_global_cfalloc : Sparrow_cil.varinfo -> Sparrow_cil.fundec -> t -> t
+= fun fvar fd icfg ->
+  let _G_ = cfgof icfg global_proc in
+  let entry = IntraCfg.entryof _G_ in
+  match IntraCfg.succ entry _G_ with
+  | [next] ->
+    let cmd =
+      Cfalloc ((Sparrow_cil.Var fvar, Sparrow_cil.NoOffset), fd, dummy_location)
+    in
+    let _G_ = IntraCfg.add_new_node entry cmd next _G_ in
+    { icfg with cfgs = BatMap.add global_proc _G_ icfg.cfgs }
+  | _ ->
+    (* entry does not have a unique successor; leave _G_ untouched and let the
+       caller fall back to pre-mem seeding only. *)
+    icfg
 
 let opt_salloc : t -> t
 =fun icfg ->

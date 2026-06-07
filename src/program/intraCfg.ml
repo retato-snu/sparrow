@@ -180,6 +180,19 @@ let empty : Sparrow_cil.fundec -> t
 let get_pid : t -> string
 =fun g -> g.fd.svar.vname
 
+let get_fd : t -> Sparrow_cil.fundec
+=fun g -> g.fd
+
+(* Copy the CFG under a fresh procedure id.  The SSA/DUG construction and the
+   ItvSem transfer both derive a node's owning pid from [get_pid cfg]
+   (= [fd.svar.vname]), so a procedure CLONE keyed under a new InterCfg pid
+   must also carry that pid in its [fd.svar.vname]; otherwise the clone's nodes
+   collapse onto the original's pid in the def-use graph.  Functional record
+   updates make fresh [fd]/[svar] records, leaving the original untouched. *)
+let copy_with_pid : string -> t -> t
+=fun pid g ->
+  { g with fd = { g.fd with svar = { g.fd.svar with vname = pid } } }
+
 let get_formals : t -> Sparrow_cil.varinfo list
 =fun g -> g.fd.sformals
 

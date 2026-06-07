@@ -59,6 +59,8 @@ val generate_module_global_proc :
 val generate_global_proc : Sparrow_cil.global list -> Sparrow_cil.fundec -> t
 
 val get_pid : t -> string
+val get_fd : t -> Sparrow_cil.fundec
+val copy_with_pid : string -> t -> t
 val get_formals : t -> Sparrow_cil.varinfo list
 val get_scc_list : t -> node list list
 

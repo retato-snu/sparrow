@@ -36,6 +36,14 @@ val init : Sparrow_cil.file -> t
 val cfgof : t -> pid -> IntraCfg.t
 val argsof : t -> pid -> Sparrow_cil.varinfo list
 val cmdof : t -> Node.t -> IntraCfg.cmd
+val add_cmd : t -> Node.t -> IntraCfg.cmd -> t
+
+(* Procedure-cloning primitives (call-site polyvariance). *)
+val add_cfg : pid -> IntraCfg.t -> t -> t
+val mem_cfg : pid -> t -> bool
+val compute_dom_and_scc : t -> t
+val insert_global_cfalloc :
+  Sparrow_cil.varinfo -> Sparrow_cil.fundec -> t -> t
 
 val pidsof : t -> pid list
 val nodesof : t -> Node.t list
@@ -51,6 +59,7 @@ val is_inside_loop : node -> t -> bool
 val callnodesof : t -> node list
 
 val add_call_edge : Node.t -> Proc.t -> t -> t
+val set_call_edge : Node.t -> ProcSet.t -> t -> t
 val get_callees : Node.t -> t -> ProcSet.t
 val is_undef : pid -> t -> bool
 
