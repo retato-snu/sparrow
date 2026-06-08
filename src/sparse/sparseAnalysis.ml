@@ -333,6 +333,9 @@ struct
       in
       Table.add n input acc
     ) dug Table.empty
+    (* seed start_node's initial mem (as [initialize] does); a boundary that
+       includes the global-init proc must recompute it from this, not from bot. *)
+    |> Table.add InterCfg.start_node (Sem.initial spec.Spec.locset)
     |> cond (!Options.pfs < 100)
          (bind_fi_locs global spec.Spec.premem dug access) id
 
