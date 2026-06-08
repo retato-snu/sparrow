@@ -32,6 +32,7 @@ sig
      fi-locs, empty outputof, every dug node) -- behaviour unchanged. *)
   val perform_with_scopes :
     ?init:(Table.t * Table.t * BasicDom.Node.t BatSet.t) ->
+    ?seed_closed:(Table.t * BasicDom.Node.t BatSet.t) ->
     (BasicDom.Node.t -> (unit -> Dom.t * Global.t) -> Dom.t * Global.t) ->
     (Spec.t -> DUGraph.t -> DUGraph.node -> analysis_state ->
      (unit -> analysis_state) -> analysis_state) ->

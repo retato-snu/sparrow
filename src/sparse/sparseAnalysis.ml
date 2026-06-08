@@ -39,6 +39,7 @@ sig
      fi-locs, empty outputof, every dug node) -- behaviour unchanged. *)
   val perform_with_scopes :
     ?init:(Table.t * Table.t * BasicDom.Node.t BatSet.t) ->
+    ?seed_closed:(Table.t * BasicDom.Node.t BatSet.t) ->
     (BasicDom.Node.t -> (unit -> Dom.t * Global.t) -> Dom.t * Global.t) ->
     (Spec.t -> DUGraph.t -> DUGraph.node -> analysis_state ->
      (unit -> analysis_state) -> analysis_state) ->
@@ -308,12 +309,39 @@ struct
     in
     (worklist, global, inputof, outputof)
 
+  (* [seed_closed] (modular link COMBINE) PULL-initialises inputof from a seed
+     outputof that carries ONLY the closed (boundary-independent) nodes' per-module
+     values -- boundary nodes are absent (=> bot).  Mirrors the narrowing input
+     computation: input[n] = join over predecessors p of outputof[p] on the p->n
+     edge locs; closed predecessors contribute their seeded value, boundary
+     predecessors contribute bot (recomputed during the boundary-only iteration).
+     Then add the flow-insensitive locs (as [initialize] does) so a boundary node
+     reading an fi-loc not on any edge still sees it.  This is the only sound way
+     to seed under the PUSH-based widening loop: boundary nodes must start from bot
+     with just the closed-predecessor contributions, never from a per-module value
+     that has top-collapsed the (now-resolvable) import. *)
+  let pull_seed_inputof spec global dug access seed_outputof =
+    DUGraph.fold_node (fun n acc ->
+      let input =
+        List.fold_left (fun m p ->
+          let pmem = Table.find p seed_outputof in
+          let locs_on_edge = DUGraph.get_abslocs p n dug in
+          PowLoc.fold (fun l m ->
+            Dom.add l (Dom.B.join (Dom.find l pmem) (Dom.find l m)) m)
+            locs_on_edge m)
+          Dom.bot (DUGraph.pred n dug)
+      in
+      Table.add n input acc
+    ) dug Table.empty
+    |> cond (!Options.pfs < 100)
+         (bind_fi_locs global spec.Spec.premem dug access) id
+
   let print_spec : Spec.t -> unit
   = fun spec ->
     my_prerr_endline ("#total abstract locations  = " ^ string_of_int (PowLoc.cardinal spec.Spec.locset));
     my_prerr_endline ("#flow-sensitive abstract locations  = " ^ string_of_int (PowLoc.cardinal spec.Spec.locset_fs))
 
-  let perform_with_scopes ?init transfer_scope analysis_scope spec global =
+  let perform_with_scopes ?init ?seed_closed transfer_scope analysis_scope spec global =
     print_spec spec;
     let access = StepManager.stepf false "Access Analysis" (AccessAnalysis.perform global spec.Spec.locset (Sem.run Strong spec)) spec.Spec.premem in
     let dug = StepManager.stepf false "Def-use graph construction" SsaDug.make (global, access, spec.Spec.locset_fs) in
@@ -330,13 +358,21 @@ struct
       StepManager.stepf false "Workorder computation"
         (fun dug -> Worklist.init ?file_of:file_of_opt dug) dug
     in
-    (* [init] (modular link combine) supplies the seeded initial inputof/outputof
-       (the per-module closed results) + the boundary nodes to iterate.  Default =
-       the standard full run: start_node mem + fi-locs, empty outputof, all nodes. *)
+    (* [init] / [seed_closed] (modular link combine) seed the fixpoint.  [init]
+       supplies inputof/outputof directly + the boundary to iterate (used for the
+       single-module case where the per-module run IS the linked run).
+       [seed_closed] supplies ONLY the closed nodes' outputs + the boundary, and
+       the engine PULL-initialises inputof from it over the DUG (the sound seed for
+       a real cross-module boundary).  Default (neither) = the standard full run. *)
     let (init_inputof, init_outputof, widening_seed) =
-      match init with
-      | None -> (initialize spec global dug access, Table.empty, None)
-      | Some (i, o, nodes) -> (i, o, Some nodes)
+      match seed_closed with
+      | Some (seed_outputof, boundary) ->
+        (pull_seed_inputof spec global dug access seed_outputof,
+         seed_outputof, Some boundary)
+      | None ->
+        (match init with
+         | None -> (initialize spec global dug access, Table.empty, None)
+         | Some (i, o, nodes) -> (i, o, Some nodes))
     in
     (worklist, global, init_inputof, init_outputof)
     |> StepManager.stepf false "Fixpoint iteration with widening"
