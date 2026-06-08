@@ -34,11 +34,11 @@ sig
   module Spec : Spec.S with type Dom.t = Dom.t and type Dom.A.t = Dom.A.t and type Dom.PowA.t = Dom.PowA.t
   type analysis_state = Worklist.t * Global.t * Table.t * Table.t
   val clear_cache : unit -> unit
-  (* [?init] seeds an incremental/modular run: (initial inputof, initial outputof,
-     boundary nodes to push).  Omitted = the standard full run (start_node mem +
-     fi-locs, empty outputof, every dug node) -- behaviour unchanged. *)
+  (* [?seed_closed] = (closed-node outputs, boundary nodes): the modular link
+     COMBINE seed -- the engine pull-initialises inputof over the DUG and iterates
+     only the boundary.  Omitted = the standard full run (start_node mem + fi-locs,
+     empty outputof, every dug node) -- behaviour unchanged. *)
   val perform_with_scopes :
-    ?init:(Table.t * Table.t * BasicDom.Node.t BatSet.t) ->
     ?seed_closed:(Table.t * BasicDom.Node.t BatSet.t) ->
     (BasicDom.Node.t -> (unit -> Dom.t * Global.t) -> Dom.t * Global.t) ->
     (Spec.t -> DUGraph.t -> DUGraph.node -> analysis_state ->
@@ -344,7 +344,7 @@ struct
     my_prerr_endline ("#total abstract locations  = " ^ string_of_int (PowLoc.cardinal spec.Spec.locset));
     my_prerr_endline ("#flow-sensitive abstract locations  = " ^ string_of_int (PowLoc.cardinal spec.Spec.locset_fs))
 
-  let perform_with_scopes ?init ?seed_closed transfer_scope analysis_scope spec global =
+  let perform_with_scopes ?seed_closed transfer_scope analysis_scope spec global =
     print_spec spec;
     let access = StepManager.stepf false "Access Analysis" (AccessAnalysis.perform global spec.Spec.locset (Sem.run Strong spec)) spec.Spec.premem in
     let dug = StepManager.stepf false "Def-use graph construction" SsaDug.make (global, access, spec.Spec.locset_fs) in
@@ -361,21 +361,16 @@ struct
       StepManager.stepf false "Workorder computation"
         (fun dug -> Worklist.init ?file_of:file_of_opt dug) dug
     in
-    (* [init] / [seed_closed] (modular link combine) seed the fixpoint.  [init]
-       supplies inputof/outputof directly + the boundary to iterate (used for the
-       single-module case where the per-module run IS the linked run).
-       [seed_closed] supplies ONLY the closed nodes' outputs + the boundary, and
-       the engine PULL-initialises inputof from it over the DUG (the sound seed for
-       a real cross-module boundary).  Default (neither) = the standard full run. *)
+    (* [seed_closed] (modular link COMBINE) supplies ONLY the closed nodes' outputs
+       + the boundary; the engine PULL-initialises inputof from it over the DUG and
+       iterates only the boundary (the sound seed for a cross-module boundary).
+       Omitted = the standard full run. *)
     let (init_inputof, init_outputof, widening_seed) =
       match seed_closed with
       | Some (seed_outputof, boundary) ->
         (pull_seed_inputof spec global dug access seed_outputof,
          seed_outputof, Some boundary)
-      | None ->
-        (match init with
-         | None -> (initialize spec global dug access, Table.empty, None)
-         | Some (i, o, nodes) -> (i, o, Some nodes))
+      | None -> (initialize spec global dug access, Table.empty, None)
     in
     (worklist, global, init_inputof, init_outputof)
     |> StepManager.stepf false "Fixpoint iteration with widening"

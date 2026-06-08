@@ -27,11 +27,11 @@ sig
   module Spec : Spec.S with type Dom.t = Dom.t and type Dom.A.t = Dom.A.t and type Dom.PowA.t = Dom.PowA.t
   type analysis_state = Worklist.t * Global.t * Table.t * Table.t
   val clear_cache : unit -> unit
-  (* [?init] seeds an incremental/modular run: (initial inputof, initial outputof,
-     boundary nodes to push).  Omitted = the standard full run (start_node mem +
-     fi-locs, empty outputof, every dug node) -- behaviour unchanged. *)
+  (* [?seed_closed] = (closed-node outputs, boundary nodes): the modular link
+     COMBINE seed -- the engine pull-initialises inputof over the DUG and iterates
+     only the boundary.  Omitted = the standard full run (start_node mem + fi-locs,
+     empty outputof, every dug node) -- behaviour unchanged. *)
   val perform_with_scopes :
-    ?init:(Table.t * Table.t * BasicDom.Node.t BatSet.t) ->
     ?seed_closed:(Table.t * BasicDom.Node.t BatSet.t) ->
     (BasicDom.Node.t -> (unit -> Dom.t * Global.t) -> Dom.t * Global.t) ->
     (Spec.t -> DUGraph.t -> DUGraph.node -> analysis_state ->
