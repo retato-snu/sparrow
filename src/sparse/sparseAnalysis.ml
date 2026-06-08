@@ -207,15 +207,21 @@ struct
       (Spec.t -> DUGraph.t -> DUGraph.node -> analysis_state ->
        (unit -> analysis_state) -> analysis_state) ->
     ?transfer_scope:(DUGraph.node -> (unit -> Dom.t * Global.t) -> Dom.t * Global.t) ->
+    ?seed_nodes:Node.t BatSet.t ->
     Spec.t -> DUGraph.t -> (Worklist.t * Global.t * Table.t * Table.t)
       -> (Worklist.t * Global.t * Table.t * Table.t)
   =fun ?(analysis_scope=direct_analysis_scope)
-       ?(transfer_scope=direct_transfer_scope) spec dug
+       ?(transfer_scope=direct_transfer_scope) ?seed_nodes spec dug
        (worklist, global, inputof, outputof) ->
     total_iterations := 0;
     let t0 = Sys.time () in
+    (* [seed_nodes] lets a seeded/incremental run push only the boundary nodes
+       (modular link combine).  Default = every dug node = the standard full run. *)
+    let seed_nodes =
+      match seed_nodes with Some s -> s | None -> DUGraph.nodesof dug
+    in
     worklist
-    |> Worklist.push_set InterCfg.start_node (DUGraph.nodesof dug)
+    |> Worklist.push_set InterCfg.start_node seed_nodes
     |> (fun init_worklist ->
         iterate
           (analyze_node_with_analysis_scope analysis_scope transfer_scope spec)
@@ -303,7 +309,7 @@ struct
     my_prerr_endline ("#total abstract locations  = " ^ string_of_int (PowLoc.cardinal spec.Spec.locset));
     my_prerr_endline ("#flow-sensitive abstract locations  = " ^ string_of_int (PowLoc.cardinal spec.Spec.locset_fs))
 
-  let perform_with_scopes transfer_scope analysis_scope spec global =
+  let perform_with_scopes ?init transfer_scope analysis_scope spec global =
     print_spec spec;
     let access = StepManager.stepf false "Access Analysis" (AccessAnalysis.perform global spec.Spec.locset (Sem.run Strong spec)) spec.Spec.premem in
     let dug = StepManager.stepf false "Def-use graph construction" SsaDug.make (global, access, spec.Spec.locset_fs) in
@@ -320,9 +326,17 @@ struct
       StepManager.stepf false "Workorder computation"
         (fun dug -> Worklist.init ?file_of:file_of_opt dug) dug
     in
-    (worklist, global, initialize spec global dug access, Table.empty)
+    (* [init] (modular link combine) supplies the seeded initial inputof/outputof
+       (the per-module closed results) + the boundary nodes to iterate.  Default =
+       the standard full run: start_node mem + fi-locs, empty outputof, all nodes. *)
+    let (init_inputof, init_outputof, widening_seed) =
+      match init with
+      | None -> (initialize spec global dug access, Table.empty, None)
+      | Some (i, o, nodes) -> (i, o, Some nodes)
+    in
+    (worklist, global, init_inputof, init_outputof)
     |> StepManager.stepf false "Fixpoint iteration with widening"
-      (widening ~analysis_scope ~transfer_scope spec dug)
+      (widening ~analysis_scope ~transfer_scope ?seed_nodes:widening_seed spec dug)
     |> finalize spec global dug access
     |> StepManager.stepf_opt !Options.narrow false "Fixpoint iteration with narrowing" (narrowing spec dug)
     |> (fun (_,global,inputof,outputof) -> (global, inputof, outputof))
