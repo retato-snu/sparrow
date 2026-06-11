@@ -368,6 +368,14 @@ struct
     let (init_inputof, init_outputof, widening_seed) =
       match seed_closed with
       | Some (seed_outputof, boundary) ->
+        (* a seeded boundary node absent from THIS dug has no def-use
+           influence here (nothing pulls from it, and its module value
+           is already in the seed output table); it also has no work
+           order, so queueing it would raise -- drop it from the seed *)
+        let dug_nodes = DUGraph.nodesof dug in
+        let boundary =
+          BatSet.filter (fun n -> BatSet.mem n dug_nodes) boundary
+        in
         (pull_seed_inputof spec global dug access seed_outputof,
          seed_outputof, Some boundary)
       | None -> (initialize spec global dug access, Table.empty, None)

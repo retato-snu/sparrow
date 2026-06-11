@@ -216,6 +216,23 @@ module Make (DUGraph : Dug.S) = struct
         | None -> (wo, ho)
         | Some file_of -> apply_file_priority file_of wo ho
       in
+      (* [make] enumerates nodes via fold_edges, so an EDGE-ISOLATED dug
+         node gets no order entry -- and [queue] raises Not_found if such
+         a node is ever pushed (a seeded modular-combine boundary can
+         contain one, e.g. a polyvariant clone whose body has no def-use
+         edges).  Give isolated nodes trailing orders: they belong to no
+         SCC and depend on nothing through the dug, so any position is a
+         valid chaotic-iteration order for them. *)
+      let max_order =
+        BatMap.fold (fun (o, _) acc -> max o acc) wo 0
+      in
+      let (wo, _) =
+        DUGraph.fold_node
+          (fun n (wo, next) ->
+             if BatMap.mem n wo then (wo, next)
+             else (BatMap.add n (next, false) wo, next + 1))
+          g (wo, max_order + 1)
+      in
       { order = wo; headorder = ho; loopheads = lhs; sccs }
   end
 
