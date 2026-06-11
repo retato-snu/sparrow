@@ -84,6 +84,18 @@ let gen_cfgs file =
       | _ -> m
     ) file.Sparrow_cil.globals BatMap.empty)
 
+(* module (translation-unit) variant: the global proc only initializes the
+   globals and does NOT call main, so a main-less library module still gets
+   a complete InterCfg (its functions are solved per-module with their
+   formals left unbound -- the open environment's holes) *)
+let gen_module_cfgs file =
+  BatMap.add global_proc (IntraCfg.generate_module_global_proc file.Sparrow_cil.globals (Sparrow_cil.emptyFunction global_proc))
+    (list_fold (fun g m ->
+      match g with
+      | Sparrow_cil.GFun (f,loc) -> BatMap.add f.svar.vname (IntraCfg.init f loc) m
+      | _ -> m
+    ) file.Sparrow_cil.globals BatMap.empty)
+
 let compute_dom_and_scc icfg =
   { icfg with cfgs =
       BatMap.map (fun cfg ->
@@ -296,6 +308,13 @@ let optimize_il : t -> t
 let init : Sparrow_cil.file -> t
 =fun file ->
   { cfgs = gen_cfgs file; globals = file.Sparrow_cil.globals ; call_edges = BatMap.empty }
+  |> opt !Options.optil optimize_il
+  |> compute_dom_and_scc
+
+(* module variant of [init]: no main required (see [gen_module_cfgs]) *)
+let init_module : Sparrow_cil.file -> t
+=fun file ->
+  { cfgs = gen_module_cfgs file; globals = file.Sparrow_cil.globals ; call_edges = BatMap.empty }
   |> opt !Options.optil optimize_il
   |> compute_dom_and_scc
 

@@ -73,6 +73,16 @@ let init file =
     table = ItvDom.Table.bot; }
   |> remove_unreachable_nodes
 
+(* module variant: InterCfg.init_module, no main required *)
+let init_module file =
+  { file = file;
+    icfg = InterCfg.init_module file;
+    callgraph = CallGraph.create ();
+    dump = Dump.empty;
+    mem = ItvDom.Mem.bot;
+    table = ItvDom.Table.bot; }
+  |> remove_unreachable_nodes
+
 let is_undef : InterCfg.pid -> t -> bool = fun pid global ->
   InterCfg.is_undef pid global.icfg
 

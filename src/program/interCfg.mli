@@ -33,6 +33,11 @@ val start_node : node
 
 val init : Sparrow_cil.file -> t
 
+(** module (translation-unit) variant of [init]: the global proc only
+    initializes globals and does not call main, so a main-less library
+    module still yields a complete InterCfg *)
+val init_module : Sparrow_cil.file -> t
+
 val cfgof : t -> pid -> IntraCfg.t
 val argsof : t -> pid -> Sparrow_cil.varinfo list
 val cmdof : t -> Node.t -> IntraCfg.cmd
