@@ -83,6 +83,25 @@ let init_module file =
     table = ItvDom.Table.bot; }
   |> remove_unreachable_nodes
 
+(* stable (function-local) node-id variants -- see InterCfg.init_stable *)
+let init_stable file =
+  { file = file;
+    icfg = InterCfg.init_stable file;
+    callgraph = CallGraph.create ();
+    dump = Dump.empty;
+    mem = ItvDom.Mem.bot;
+    table = ItvDom.Table.bot; }
+  |> remove_unreachable_nodes
+
+let init_module_stable file =
+  { file = file;
+    icfg = InterCfg.init_module_stable file;
+    callgraph = CallGraph.create ();
+    dump = Dump.empty;
+    mem = ItvDom.Mem.bot;
+    table = ItvDom.Table.bot; }
+  |> remove_unreachable_nodes
+
 let is_undef : InterCfg.pid -> t -> bool = fun pid global ->
   InterCfg.is_undef pid global.icfg
 

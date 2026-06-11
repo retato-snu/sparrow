@@ -38,6 +38,12 @@ val init : Sparrow_cil.file -> t
     module still yields a complete InterCfg *)
 val init_module : Sparrow_cil.file -> t
 
+(** stable (function-local) node-id variants: a function's node ids and
+    allocation-site identities depend only on its own body, so a
+    per-module solved memory can be seeded into a merged link *)
+val init_stable : Sparrow_cil.file -> t
+val init_module_stable : Sparrow_cil.file -> t
+
 val cfgof : t -> pid -> IntraCfg.t
 val argsof : t -> pid -> Sparrow_cil.varinfo list
 val cmdof : t -> Node.t -> IntraCfg.cmd

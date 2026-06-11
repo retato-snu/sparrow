@@ -318,3 +318,51 @@ let init_module : Sparrow_cil.file -> t
   |> opt !Options.optil optimize_il
   |> compute_dom_and_scc
 
+(* STABLE (function-local) node-id variants: reset the IntraCfg node
+   counter before each function's CFG build, so a function's node ids --
+   and therefore its allocation-site identities -- depend only on its own
+   body.  The same function then gets the same ids whether built
+   module-alone or inside a merged link, which is what lets a per-module
+   solved memory be SEEDED into a link.  The global proc's ids remain
+   content-dependent (its body differs between module and link); it is
+   always recomputed at link.  Node ids stay unique within each CFG;
+   nothing in the analysis requires cross-CFG uniqueness. *)
+let reset_node_counter () =
+  IntraCfg.Node.set_next_id (IntraCfg.Node.get_initial_id ())
+
+let gen_cfgs_stable_gproc gproc_of_file file =
+  reset_node_counter ();
+  let gproc = gproc_of_file file in
+  BatMap.add global_proc gproc
+    (list_fold (fun g m ->
+      match g with
+      | Sparrow_cil.GFun (f,loc) ->
+        reset_node_counter ();
+        BatMap.add f.svar.vname (IntraCfg.init f loc) m
+      | _ -> m
+    ) file.Sparrow_cil.globals BatMap.empty)
+
+let init_stable : Sparrow_cil.file -> t
+=fun file ->
+  { cfgs =
+      gen_cfgs_stable_gproc
+        (fun file ->
+           IntraCfg.generate_global_proc file.Sparrow_cil.globals
+             (Sparrow_cil.emptyFunction global_proc))
+        file;
+    globals = file.Sparrow_cil.globals ; call_edges = BatMap.empty }
+  |> opt !Options.optil optimize_il
+  |> compute_dom_and_scc
+
+let init_module_stable : Sparrow_cil.file -> t
+=fun file ->
+  { cfgs =
+      gen_cfgs_stable_gproc
+        (fun file ->
+           IntraCfg.generate_module_global_proc file.Sparrow_cil.globals
+             (Sparrow_cil.emptyFunction global_proc))
+        file;
+    globals = file.Sparrow_cil.globals ; call_edges = BatMap.empty }
+  |> opt !Options.optil optimize_il
+  |> compute_dom_and_scc
+
