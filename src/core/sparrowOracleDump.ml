@@ -1637,7 +1637,10 @@ let json_of_query (q : Report.query) =
 let json_of_alarms queries = list (List.map json_of_query queries)
 
 (* Fixpoint cost metrics captured by the last sparse analysis run, for
-   comparing worklist-order strategies (e.g. wto vs file). *)
+   comparing worklist-order strategies (e.g. wto vs file).  Iteration
+   COUNTS only: wall-clock times are nondeterministic and would break the
+   dump's byte-reproducibility contract (oracle_dump_smoke); time the
+   process from the runner instead. *)
 let json_of_stats () =
   assoc [
     ("worklist_order", str !Options.worklist_order);
@@ -1645,8 +1648,6 @@ let json_of_stats () =
     ("pre_iters", int !PreAnalysis.last_pre_iters);
     ("widen_iters", int !SparseAnalysis.last_widen_iters);
     ("narrow_iters", int !SparseAnalysis.last_narrow_iters);
-    ("widen_time", float !SparseAnalysis.widen_time);
-    ("narrow_time", float !SparseAnalysis.narrow_time);
   ]
 
 let to_json_sparse files pre_global global inputof outputof access dug worklist

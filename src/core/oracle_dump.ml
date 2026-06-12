@@ -53,6 +53,11 @@ let main () =
     ("--preanalysis_order", Arg.Set_string Options.preanalysis_order, "Pre-analysis node traversal: default | file");
   ] in
   Arg.parse specs Frontend.args usage;
+  (* Canonical source-file order: the modular front end sorts files before
+     Mergecil.merge (so the merged _G_ is independent of CLI order); the
+     oracle must merge in the SAME canonical order or multi-file front_end
+     equality breaks whenever CLI order differs from sorted order. *)
+  Frontend.files := List.sort String.compare !Frontend.files;
   let stage =
     match !stage with
     | Some stage -> stage
