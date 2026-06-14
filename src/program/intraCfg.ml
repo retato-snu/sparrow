@@ -924,8 +924,9 @@ let merge_vertex g vl =
   |> remove_edge (List.hd vl) (List.hd vl)
 
 let rec collect g n lval node_list exp_list =
-  let s = succ n g |> List.hd in
-  match (find_cmd n g, find_cmd s g) with
+  match succ n g with
+  | [s] ->
+  (match (find_cmd n g, find_cmd s g) with
     Cmd.Csalloc (_, str, _), Cmd.Cset (l, e, _) ->
     begin
       match Sparrow_cil.removeOffsetLval l with
@@ -946,6 +947,7 @@ let rec collect g n lval node_list exp_list =
           else (node_list, exp_list)
       | _ -> (node_list, exp_list)
     end
+  | _ -> (node_list, exp_list))
   | _ -> (node_list, exp_list)
 
 let is_candidate n g =
