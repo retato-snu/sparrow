@@ -24,6 +24,8 @@ module Allocsite : sig
   val is_ext_allocsite : t -> bool
   val is_cmd_arg : t -> bool
   val allocsite_of_ext : string option -> t
+  (* map the underlying Node of an internal allocsite (externals unchanged) *)
+  val map_node : (Node.t -> Node.t) -> t -> t
 end
 
 module Loc : sig

@@ -54,6 +54,13 @@ struct
   let is_node_allocsite = function Internal (_,false) -> true | _ -> false
   let is_string_allocsite = function Internal (_,true) -> true | _ -> false
   let is_ext_allocsite = function External _ -> true | _ -> false
+
+  (* map the underlying Node of an internal allocsite (externals unchanged) --
+     used to re-key a module's TU-local allocsites to a module-qualified pid at
+     link time (separate-compilation stitch) *)
+  let map_node f = function
+    | Internal (node, is_str) -> Internal (f node, is_str)
+    | (External _) as ext -> ext
   let is_cmd_arg = function External e -> ExtAllocsite.is_cmd_arg e | _ -> false
 
   let allocsite_of_ext = function
