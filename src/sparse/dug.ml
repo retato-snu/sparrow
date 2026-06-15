@@ -437,16 +437,15 @@ struct
 	  let add_absloc src loc dst dug =
 	    if !Options.bdd_compact then
 	      buffer_abslocs src (PowLoc.singleton loc) dst dug
-	    else begin
-	      let set_locs = set_label src dst dug in
-	      let set_locs' = PowLoc.add loc set_locs in
-	      if set_locs' != set_locs then begin
-	        Hashtbl.replace dug.set_labels (src, dst) set_locs';
-	        dug.pending_locs_approx <- dug.pending_locs_approx + 1
-	      end;
-	      I.add_edge dug.graph src dst;
-	      dug
-	    end
+	    else
+	      (* Store the loc directly in the BDD (as the khheo reference does), NOT
+	         in an OCaml set_labels map. ssaDug builds the bulk of the DUG via
+	         per-loc add_absloc, so the old set_labels path kept nearly all
+	         intra-procedural edge labels as PowLoc sets -- defeating BDD's whole
+	         memory purpose: emacs construction climbed past 16GB (vs the paper's
+	         7.8GB) and was capped. Routing single-loc adds into the BDD keeps the
+	         def-use relation compressed; set_labels stays empty in non-compact. *)
+	      add_abslocs_to_bdd src (PowLoc.singleton loc) dst dug
 
 	  let add_abslocs src locs dst dug =
 	    if PowLoc.is_empty locs then dug
