@@ -46,6 +46,12 @@ let worklist_order = ref "wto"
 let preanalysis_order = ref "default"
 let profile = ref false
 let scaffold = ref true
+let bdd_dug = ref false
+let bdd_compact = ref false
+let bdd_compact_set_threshold = ref 8
+let dug_optimize = ref "off"
+let sparse_iter_stats = ref 0
+let sparse_seed = ref "all"
 
 (* Unsoundness *)
 let unsound_loop = ref BatSet.empty
@@ -108,6 +114,12 @@ let opts =
   ("-oct", (Arg.Set oct), "Do octagon analysis");
   ("-taint", (Arg.Set taint), "Do taint analysis");
   ("-profile", (Arg.Set profile), "Profiler");
+  ("-bdd_dug", (Arg.Set bdd_dug), "Use experimental BDD-backed def-use graph");
+  ("-bdd_compact", (Arg.Set bdd_compact), "Move BDD DUG set labels into the BDD store at construction end");
+  ("-bdd_compact_set_threshold", (Arg.Int (fun x -> bdd_compact_set_threshold := x)), "Keep compact BDD DUG labels of size <= N in OCaml sets (default: 8)");
+  ("-dug_optimize", (Arg.Set_string dug_optimize), "Def-use graph bypass optimization: off | join | all");
+  ("-sparse_iter_stats", (Arg.Int (fun x -> sparse_iter_stats := x)), "Print sparse iteration hot-node stats every N iterations (0 disables)");
+  ("-sparse_seed", (Arg.Set_string sparse_seed), "Sparse initial worklist seed: all | sources");
   ("-narrow", (Arg.Set narrow), "Do narrowing");
   ("-worklist_order", (Arg.Set_string worklist_order), "Worklist order strategy: wto (default) | file (prioritize intra-file iteration)");
   ("-preanalysis_order", (Arg.Set_string preanalysis_order), "Flow-insensitive pre-analysis iteration: default (global sweep+widen) | file (same, nodes grouped by file) | module (stabilize each file to a local fixpoint before the next)");

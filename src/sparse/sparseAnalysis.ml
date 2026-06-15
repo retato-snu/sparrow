@@ -22,6 +22,8 @@ let last_widen_iters = ref 0
 let last_narrow_iters = ref 0
 let widen_time = ref 0.0
 let narrow_time = ref 0.0
+let iter_stats : (BasicDom.Node.t, int) Hashtbl.t = Hashtbl.create 1024
+let unstable_stats : (BasicDom.Node.t, int) Hashtbl.t = Hashtbl.create 1024
 
 module type S =
 sig
@@ -63,8 +65,8 @@ struct
   module PowLoc = Sem.Dom.PowA
   type analysis_state = Worklist.t * Global.t * Table.t * Table.t
 
-  let needwidening : DUGraph.node -> Worklist.t -> bool
-  =fun idx wl -> Worklist.is_loopheader idx wl
+  let needwidening : bool -> DUGraph.node -> Worklist.t -> bool
+  =fun should_widen idx wl -> should_widen && Worklist.is_loopheader idx wl
 
   let def_locs_cache = Hashtbl.create 251
   let get_def_locs : Node.t -> DUGraph.t -> Access.PowLoc.t
@@ -80,8 +82,51 @@ struct
     Hashtbl.clear def_locs_cache;
     SsaDug.clear_cache ()
 
-  let print_iteration () =
+  let join_pairs_on_edge mem_edge pairs input =
+    let add_one (input, stable) (loc, value) =
+      if not (mem_edge loc) then (input, stable)
+      else
+      if Dom.B.eq value Dom.B.bot then (input, stable)
+      else
+        let old_value = Dom.find loc input in
+        if Dom.B.le value old_value then (input, stable)
+        else
+          let joined_value =
+            if Dom.B.le old_value value then value
+            else Dom.B.join old_value value
+          in
+          (Dom.add loc joined_value input, false)
+    in
+    List.fold_left add_one (input, true) pairs
+
+  let reset_iter_stats () =
+    Hashtbl.clear iter_stats;
+    Hashtbl.clear unstable_stats
+
+  let bump_stat tbl node delta =
+    let old = try Hashtbl.find tbl node with Not_found -> 0 in
+    Hashtbl.replace tbl node (old + delta)
+
+  let top_stats tbl limit =
+    Hashtbl.fold (fun node count acc -> (node, count) :: acc) tbl []
+    |> List.sort (fun (_, a) (_, b) -> compare b a)
+    |> BatList.take limit
+
+  let print_sparse_iter_stats () =
+    if !Options.sparse_iter_stats > 0 then
+    begin
+      let show_entry (node, count) =
+        Node.to_string node ^ ":" ^ string_of_int count
+      in
+      let visits = top_stats iter_stats 8 |> List.map show_entry |> String.concat ", " in
+      let unstable = top_stats unstable_stats 8 |> List.map show_entry |> String.concat ", " in
+      my_prerr_endline ("\n#sparse hot visits: " ^ visits);
+      my_prerr_endline ("#sparse hot unstable-locs: " ^ unstable)
+    end
+
+  let print_iteration idx =
     total_iterations := !total_iterations + 1;
+    if !Options.sparse_iter_stats > 0 then bump_stat iter_stats idx 1;
     if !total_iterations = 1 then (g_clock := Sys.time(); l_clock := Sys.time ())
     else if !total_iterations mod 10000 = 0
     then
@@ -92,6 +137,9 @@ struct
                         ^ " took " ^ g_time
                         ^ "s  ("  ^ l_time ^ "s / last 10000 iters)");
       flush stderr;
+      if !Options.sparse_iter_stats > 0
+         && !total_iterations mod !Options.sparse_iter_stats = 0
+      then print_sparse_iter_stats ();
       l_clock := Sys.time ();
     end
 
@@ -99,29 +147,42 @@ struct
     let (works, inputof) =
       let update_succ succ (works, inputof) =
         let old_input = Table.find succ inputof in
-        let locs_on_edge = DUGraph.get_abslocs idx succ dug in
-        let is_on_edge (x, _) = DUGraph.mem_duset x locs_on_edge in
-        let to_join = List.filter is_on_edge unstables in
-        if to_join = [] then (works, inputof)
-        else
-          let new_input = Dom.join_pairs to_join old_input in
-          (Worklist.push idx succ works, Table.add succ new_input inputof)
+        let mem_edge =
+          if !Options.bdd_dug then
+            let locs_on_edge = DUGraph.get_duset idx succ dug in
+            fun x -> DUGraph.mem_duset x locs_on_edge
+          else
+            let locs_on_edge = DUGraph.get_abslocs idx succ dug in
+            fun x -> PowLoc.mem x locs_on_edge
+        in
+        let (new_input, stable) =
+          join_pairs_on_edge mem_edge unstables old_input
+        in
+        if stable then (works, inputof)
+        else (Worklist.push idx succ works, Table.add succ new_input inputof)
       in
       DUGraph.fold_succ update_succ dug idx (works, inputof)
     in
     (works, global, inputof, Table.add idx new_output outputof)
 
-  let get_unstable dug idx works old_output (new_output, global) =
-    let def_locs = Profiler.event "SparseAnalysis.widening_get_def_locs" (get_def_locs idx) dug in
+  let get_unstable dug idx should_widen works old_output (new_output, global) =
+    let def_locs =
+      if DUGraph.is_bdd dug then Dom.keys new_output
+      else Profiler.event "SparseAnalysis.widening_get_def_locs" (get_def_locs idx) dug
+    in
     let is_unstb v1 v2 = not (Dom.B.le v2 v1) in
     let u = Profiler.event "SparseAnalysis.widening_unstable" (Dom.unstables old_output new_output is_unstb) def_locs in
     if u = [] then None
     else
-      let op = if needwidening idx works then Dom.B.widen else (fun _ y -> y) in
+      let op =
+        if needwidening should_widen idx works then Dom.B.widen
+        else (fun _ y -> y)
+      in
       let _ = Profiler.start_event "SparseAnalysis.widening_new_output" in
       let u = List.map (fun (k, v1, v2) -> (k, op v1 v2)) u in
       let new_output = list_fold (fun (k, v) -> Dom.add k v) u old_output in
       let _ = Profiler.finish_event "SparseAnalysis.widening_new_output" in
+      if !Options.sparse_iter_stats > 0 then bump_stat unstable_stats idx (List.length u);
       (* update unstable locations's values by widened values *)
       let u = List.map (fun (k, _) -> (k, Dom.find k new_output)) u in
       Some (u, new_output, global)
@@ -150,10 +211,10 @@ struct
   let analyze_node :
     (DUGraph.node -> (unit -> Dom.t * Global.t) -> Dom.t * Global.t) ->
     Spec.t -> DUGraph.t -> DUGraph.node
+    -> bool -> (Worklist.t * Global.t * Table.t * Table.t)
     -> (Worklist.t * Global.t * Table.t * Table.t)
-    -> (Worklist.t * Global.t * Table.t * Table.t)
-  = fun transfer_scope spec dug idx (works, global, inputof, outputof) ->
-    print_iteration ();
+  = fun transfer_scope spec dug idx should_widen (works, global, inputof, outputof) ->
+    print_iteration idx;
     let old_output = Table.find idx outputof in
     (Table.find idx inputof, global)
     |> opt !Options.debug (prdbg_input idx)
@@ -162,23 +223,24 @@ struct
             Profiler.event "SparseAnalysis.run" (Sem.run Strong spec idx)
               input))
     |> opt !Options.debug (prdbg_output old_output)
-    |> Profiler.event "SparseAnalysis.get_unstable" (get_unstable dug idx works old_output)
+    |> Profiler.event "SparseAnalysis.get_unstable" (get_unstable dug idx should_widen works old_output)
     &> Profiler.event "SparseAnalysis.propagating" (propagate dug idx (works,inputof,outputof))
     |> (function None -> (works, global, inputof, outputof) | Some x -> x)
 
-  let analyze_node_with_analysis_scope analysis_scope transfer_scope spec dug idx
+  let analyze_node_with_analysis_scope analysis_scope transfer_scope spec dug idx should_widen
       state =
     analysis_scope spec dug idx state (fun () ->
-        analyze_node transfer_scope spec dug idx state)
+        analyze_node transfer_scope spec dug idx should_widen state)
 
 
   (* fixpoint iterator that can be used in both widening and narrowing phases *)
   let analyze_node_with_otable (widen,order) : Spec.t -> DUGraph.t ->
     DUGraph.node
+    -> bool
     -> (Worklist.t * Global.t * Table.t * Table.t)
     -> (Worklist.t * Global.t * Table.t * Table.t)
-  =fun spec dug idx (works, global, inputof, outputof) ->
-    print_iteration ();
+  =fun spec dug idx _should_widen (works, global, inputof, outputof) ->
+    print_iteration idx;
     let pred = DUGraph.pred idx dug in
     let input = List.fold_left (fun m p ->
           let pmem = Table.find p outputof in
@@ -202,9 +264,9 @@ struct
   =fun dug (works, global, inputof, outputof) ->
     match Worklist.pick works with
     | None -> (works, global, inputof, outputof)
-    | Some (idx, rest) ->
+    | Some (idx, should_widen, rest) ->
       (rest, global, inputof, outputof)
-      |> f dug idx
+      |> f dug idx should_widen
       |> iterate f dug
 
   let widening :
@@ -219,6 +281,7 @@ struct
        ?(transfer_scope=direct_transfer_scope) ?seed_nodes spec dug
        (worklist, global, inputof, outputof) ->
     total_iterations := 0;
+    reset_iter_stats ();
     let t0 = Sys.time () in
     (* [seed_nodes] lets a seeded/incremental run push only the boundary nodes
        (modular link combine).  Default = every dug node = the standard full run. *)
@@ -226,7 +289,7 @@ struct
       match seed_nodes with Some s -> s | None -> DUGraph.nodesof dug
     in
     worklist
-    |> Worklist.push_set InterCfg.start_node seed_nodes
+    |> Worklist.push_init seed_nodes
     |> (fun init_worklist ->
         iterate
           (analyze_node_with_analysis_scope analysis_scope transfer_scope spec)
@@ -235,15 +298,17 @@ struct
     |> (fun x ->
         widen_time := Sys.time () -. t0;
         last_widen_iters := !total_iterations;
+        print_sparse_iter_stats ();
         my_prerr_endline ("\n#iteration in widening : " ^ string_of_int !total_iterations); x)
 
   let narrowing ?(initnodes=BatSet.empty) : Spec.t -> DUGraph.t -> (Worklist.t * Global.t * Table.t * Table.t)
       -> (Worklist.t * Global.t * Table.t * Table.t)
   =fun spec dug (worklist, global, inputof, outputof) ->
     total_iterations := 0;
+    reset_iter_stats ();
     let t0 = Sys.time () in
     worklist
-    |> Worklist.push_set InterCfg.start_node (if (BatSet.is_empty initnodes) then DUGraph.nodesof dug else initnodes)
+    |> Worklist.push_init (if (BatSet.is_empty initnodes) then DUGraph.nodesof dug else initnodes)
     |> (fun init_worklist -> iterate (analyze_node_with_otable (Dom.narrow, fun x y -> Dom.le y x) spec)
         dug (init_worklist, global, inputof, outputof))
     |> (fun x ->
@@ -267,6 +332,7 @@ struct
     begin
       prerr_memory_usage ();
       prerr_endline ("#Nodes in def-use graph : " ^ i2s (DUGraph.nb_node dug));
+      prerr_endline ("#Edges in def-use graph : " ^ i2s (DUGraph.nb_edge dug));
       prerr_endline ("#Locs on def-use graph : " ^ i2s (DUGraph.nb_loc dug));
     end
 
@@ -365,6 +431,17 @@ struct
        + the boundary; the engine PULL-initialises inputof from it over the DUG and
        iterates only the boundary (the sound seed for a cross-module boundary).
        Omitted = the standard full run. *)
+    let default_widening_seed dug =
+      match !Options.sparse_seed with
+      | "all" -> None
+      | "sources" ->
+        Some (DUGraph.fold_node
+                (fun n seeds ->
+                   if DUGraph.pred n dug = [] then BatSet.add n seeds
+                   else seeds)
+                dug BatSet.empty)
+      | mode -> failwith ("unknown -sparse_seed mode: " ^ mode)
+    in
     let (init_inputof, init_outputof, widening_seed) =
       match seed_closed with
       | Some (seed_outputof, boundary) ->
@@ -378,7 +455,7 @@ struct
         in
         (pull_seed_inputof spec global dug access seed_outputof,
          seed_outputof, Some boundary)
-      | None -> (initialize spec global dug access, Table.empty, None)
+      | None -> (initialize spec global dug access, Table.empty, default_widening_seed dug)
     in
     (worklist, global, init_inputof, init_outputof)
     |> StepManager.stepf false "Fixpoint iteration with widening"

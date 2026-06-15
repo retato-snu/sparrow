@@ -26,7 +26,8 @@ sig
     loop_headers : BasicDom.Node.t list;
   }
   val init : ?file_of:(BasicDom.Node.t -> string) -> DUGraph.t -> t
-  val pick : t -> (BasicDom.Node.t * t) option
+  val pick : t -> (BasicDom.Node.t * bool * t) option
+  val push_init : BasicDom.Node.t BatSet.t -> t -> t
   val push : BasicDom.Node.t -> BasicDom.Node.t -> t -> t
   val push_set : BasicDom.Node.t -> BasicDom.Node.t BatSet.t -> t -> t
   val is_loopheader : BasicDom.Node.t -> t -> bool

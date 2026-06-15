@@ -29,7 +29,8 @@ sig
     loop_headers : BasicDom.Node.t list;
   }
   val init : ?file_of:(BasicDom.Node.t -> string) -> DUGraph.t -> t
-  val pick : t -> (BasicDom.Node.t * t) option
+  val pick : t -> (BasicDom.Node.t * bool * t) option
+  val push_init : BasicDom.Node.t BatSet.t -> t -> t
   val push : BasicDom.Node.t -> BasicDom.Node.t -> t -> t
   val push_set : BasicDom.Node.t -> BasicDom.Node.t BatSet.t -> t -> t
   val is_loopheader : BasicDom.Node.t -> t -> bool
@@ -183,32 +184,33 @@ module Make (DUGraph : Dug.S) = struct
       let ho' = BatMap.mapi (fun n h -> off n + h) ho in
       (wo', ho')
 
-    let perform ?file_of g =
-      let (ng, i2n) = make g in
-      let sccs = List.rev (NGraph.scc_list ng) in
-      Profiler.start_event "Worklist.get_order";
+	    let perform ?file_of g =
+	      let (ng, i2n) = make g in
+	      let sccs = List.rev (NGraph.scc_list ng) in
+	      Profiler.start_event "Worklist.get_order";
       let (wo, lhs, ho, _) =
         get_order1 sccs ng (BatMap.empty, BatSet.empty, BatMap.empty) 0 in
-(*        get_order2 (List.map (fun scc -> (scc,ng)) sccs) (BatMap.empty, BatSet.empty, BatMap.empty) 0 in*)
-      Profiler.finish_event "Worklist.get_order";
+	(*        get_order2 (List.map (fun scc -> (scc,ng)) sccs) (BatMap.empty, BatSet.empty, BatMap.empty) 0 in*)
+	      Profiler.finish_event "Worklist.get_order";
 
       let add_rec_node src dst nodes =
         if NGraph.Node.compare src dst = 0 then BatSet.add src nodes else nodes
       in
       let lhs = NGraph.fold_edges add_rec_node ng lhs in
-      let trans_map trans_k trans_v m =
-      let add_1 k v = BatMap.add (trans_k k) (trans_v k v) in
-      BatMap.foldi add_1 m BatMap.empty in
-      let trans_set trans_v s =
-        let add_1 v = BatSet.add (trans_v v) in
-        BatSet.fold add_1 s BatSet.empty
-      in
-      let trans_k k = BatMap.find k i2n in
+	      let trans_k k = BatMap.find k i2n in
 
-      Profiler.start_event "Worklist.trans";
-      let wo = trans_map trans_k (fun k v -> (v, BatSet.mem k lhs)) wo in
-      let lhs = trans_set (fun v -> BatMap.find v i2n) lhs in
-      let ho = trans_map trans_k (fun _ v -> v) ho in
+	      Profiler.start_event "Worklist.trans";
+	      let trans_map trans_k trans_v m =
+	        let add_1 k v = BatMap.add (trans_k k) (trans_v k v) in
+	        BatMap.foldi add_1 m BatMap.empty
+	      in
+	      let trans_set trans_v s =
+	        let add_1 v = BatSet.add (trans_v v) in
+	        BatSet.fold add_1 s BatSet.empty
+	      in
+	      let wo = trans_map trans_k (fun k v -> (v, BatSet.mem k lhs)) wo in
+	      let lhs = trans_set (fun v -> BatMap.find v i2n) lhs in
+	      let ho = trans_map trans_k (fun _ v -> v) ho in
       let sccs = List.map (List.map trans_k) sccs in
       Profiler.finish_event "Worklist.trans";
       let (wo, ho) =
@@ -261,7 +263,12 @@ module Make (DUGraph : Dug.S) = struct
       else cmp_o
   end
 
-  module S = BatSet.Make (Ord)
+  module WorkItem = struct
+    type t = Ord.t * bool
+    let compare (x, _) (y, _) = Ord.compare x y
+  end
+
+  module S = BatSet.Make (WorkItem)
   type t = {
     set : S.t;
     order : Workorder.t;
@@ -281,11 +288,18 @@ module Make (DUGraph : Dug.S) = struct
     let rec change_order n o is_inneredge =
       let is_loophead = snd o in
       if is_inneredge && is_loophead then
-        try (BatMap.find n wl.order.Workorder.headorder, is_loophead) with Not_found -> o
-      else o in
+        let o' =
+          try (BatMap.find n wl.order.Workorder.headorder, is_loophead)
+          with Not_found -> o
+        in
+        (o', true)
+      else (o, false) in
     let o = BatMap.find n wl.order.Workorder.order in
-    let new_o = change_order n o is_inneredge in
-    { wl with set = S.add (new_o, n) wl.set }
+    let (new_o, should_widen) = change_order n o is_inneredge in
+    { wl with set = S.add ((new_o, n), should_widen) wl.set }
+
+  let push_init nodes ws =
+    BatSet.fold (fun n works -> queue false n works) nodes ws
 
   let push : Node.t -> Node.t -> t -> t
   = fun idx succ ws ->
@@ -299,7 +313,8 @@ module Make (DUGraph : Dug.S) = struct
       queue bInnerLoop succ works
     ) succs ws
 
-  let init ?file_of dug = { set = S.empty; order = Workorder.perform ?file_of dug }
+  let init ?file_of dug =
+    { set = S.empty; order = Workorder.perform ?file_of dug }
 
   let is_loopheader idx ws = Workorder.is_loopheader idx ws.order
 
@@ -326,8 +341,8 @@ module Make (DUGraph : Dug.S) = struct
 
   let pick ws =
     try
-      let ((_,n) as e, set) = S.pop_min ws.set in
+      let (((_,n), should_widen), set) = S.pop_min ws.set in
       let ws = { ws with set } in
-      Some (n, ws)
+      Some (n, should_widen, ws)
     with Not_found -> None
 end

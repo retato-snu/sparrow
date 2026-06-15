@@ -51,6 +51,12 @@ val narrow : bool ref
 val worklist_order : string ref
 val preanalysis_order : string ref
 val scaffold : bool ref
+val bdd_dug : bool ref
+val bdd_compact : bool ref
+val bdd_compact_set_threshold : int ref
+val dug_optimize : string ref
+val sparse_iter_stats : int ref
+val sparse_seed : string ref
 val int_overflow : bool ref
 
 (** {2 Alarm Report } *)

@@ -6,6 +6,7 @@
  (wrapped false)
  (libraries 
    batteries findlib findlib.internal findlib.dynload dynlink 
+    sparrow_bdd_runtime
     goblint-cil
     goblint-cil.makecfg
     gmp apron apron.octMPQ ocamlgraph yojson pyml threads str unix num)

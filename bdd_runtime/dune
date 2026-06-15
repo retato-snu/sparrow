@@ -1,0 +1,9 @@
+(library
+ (name sparrow_bdd_runtime)
+ (public_name sparrow.bdd_runtime)
+ (wrapped false)
+ (foreign_stubs
+  (language c)
+  (names muddy bddio bddop bvec cache fdd imatrix kernel pairs prime reorder tree)
+  (flags (:standard -I.)))
+ (c_library_flags -lm))

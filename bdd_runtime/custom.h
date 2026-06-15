@@ -1,0 +1,2 @@
+#define CUSTOM_BLOCK 1
+#define CUSTOM_MAX 10000

@@ -261,8 +261,8 @@ struct
       try
         let src = Node.make pid (LocMap.find loc loc2lastdef) in
         let dst = Node.make pid here in
-          if PowLoc.mem loc locset then DUGraph.add_absloc src loc dst dug
-          else dug
+        if PowLoc.mem loc locset then DUGraph.add_absloc src loc dst dug
+        else dug
       with _ -> dug in
     let rec search loc2lastdef node dug =
       let uses = uses_of node in
@@ -309,7 +309,7 @@ struct
     let r =snd (
         InterCfg.fold_cfgs (fun pid cfg (k,dug) ->
           prerr_progressbar k n_pids;
-          (k+1,cfg2dug (global,access,locset) cfg dug)
+          (k+1,cfg2dug (global,access,locset) cfg dug |> DUGraph.compact)
         ) global.icfg (1,dug)) in
     Profiler.finish_event "DugGen.draw_intraedges";
     r
@@ -350,13 +350,107 @@ struct
           ) use_points dug
       ) single_defs dug
 
+  let is_joinopt_target global node =
+    let pid = Node.get_pid node in
+    let cfgnode = Node.get_cfgnode node in
+    try
+      let cfg = InterCfg.cfgof global.icfg pid in
+      List.length (IntraCfg.pred cfgnode cfg) > 1
+      && not (IntraCfg.is_entry cfgnode)
+      && not (IntraCfg.is_exit cfgnode)
+      && not (IntraCfg.is_callnode cfgnode cfg)
+      && not (IntraCfg.is_returnnode cfgnode cfg)
+    with _ -> false
+
+  let optimize_node access node dug =
+    let with_locs src dst = (src, dst, DUGraph.get_abslocs src dst dug) in
+    let pred_edges = List.map (fun pred -> with_locs pred node) (DUGraph.pred node dug) in
+    let succ_edges = List.map (fun succ -> with_locs node succ) (DUGraph.succ node dug) in
+    let collect_vars (_, _, locs) vars = PowLoc.union locs vars in
+    let variables =
+      List.fold_left
+        (fun vars edge -> collect_vars edge vars)
+        PowLoc.empty (pred_edges @ succ_edges)
+    in
+    let accesses = Access.Info.accessof (Access.find_node node access) in
+    let non_accessed = PowLoc.diff variables accesses in
+    let edge_has_loc loc (_, _, locs) = PowLoc.mem loc locs in
+    let remove_loc loc edges dug =
+      List.fold_left
+        (fun dug (src, dst, _) -> DUGraph.remove_absloc src loc dst dug)
+        dug edges
+    in
+    let draw loc srcs dsts dug =
+      List.fold_left
+        (fun dug src ->
+           List.fold_left
+             (fun dug dst -> DUGraph.add_absloc src loc dst dug)
+             dug dsts)
+        dug srcs
+    in
+    let remove_created_selfcycles loc srcs dsts dug =
+      List.fold_left
+        (fun dug src ->
+           if List.exists (fun dst -> Node.compare src dst = 0) dsts then
+             DUGraph.remove_absloc src loc src dug
+           else dug)
+        dug srcs
+    in
+    let bypass loc dug =
+      let preds = List.filter (edge_has_loc loc) pred_edges in
+      let succs = List.filter (edge_has_loc loc) succ_edges in
+      match List.length preds, List.length succs with
+      | 0, 0 -> dug
+      | 0, _ | _, 0 ->
+        dug
+        |> remove_loc loc preds
+        |> remove_loc loc succs
+      | 1, _ | _, 1 ->
+        let srcs = List.map (fun (src, _, _) -> src) preds in
+        let dsts = List.map (fun (_, dst, _) -> dst) succs in
+        dug
+        |> remove_loc loc preds
+        |> remove_loc loc succs
+        |> draw loc srcs dsts
+        |> remove_created_selfcycles loc srcs dsts
+      | _ -> dug
+    in
+    let dug = PowLoc.fold bypass non_accessed dug in
+    DUGraph.remove_abslocs node non_accessed node dug
+
+  let optimize_dug : Global.t * Access.t * PowLoc.t -> DUGraph.t -> DUGraph.t
+  =fun (global,access,_locset) dug ->
+    match !Options.dug_optimize with
+    | "off" -> dug
+    | mode when !Options.bdd_dug ->
+      my_prerr_endline
+        ("ignoring -dug_optimize " ^ mode ^ " with -bdd_dug");
+      dug
+    | "join" ->
+      Profiler.event "DugGen.optimize_dug.join"
+        (fun dug ->
+           DUGraph.fold_node
+             (fun node dug ->
+                if is_joinopt_target global node then optimize_node access node dug
+                else dug)
+             dug dug)
+        dug
+    | "all" ->
+      Profiler.event "DugGen.optimize_dug.all"
+        (fun dug -> DUGraph.fold_node (optimize_node access) dug dug)
+        dug
+    | mode ->
+      failwith ("unknown -dug_optimize mode: " ^ mode)
+
   let make ?(skip_nodes = BatSet.empty) : Global.t * Access.t * PowLoc.t -> DUGraph.t
   =fun (global,access,locset) ->
     let nodes = InterCfg.nodesof global.icfg in
     let access = Access.restrict_access access locset in
-    DUGraph.create ~size:(List.length nodes) ()
-    |> draw_intraedges (global,access,locset)
-    |> draw_interedges (global,access,locset)
+		    DUGraph.create ~size:(List.length nodes) ~loc_size:(PowLoc.cardinal locset) ()
+	    |> draw_intraedges (global,access,locset)
+	    |> draw_interedges (global,access,locset)
+	    |> optimize_dug (global,access,locset)
+	    |> DUGraph.compact
 
   let to_json_intra : DUGraph.t -> Access.t -> Yojson.Safe.t
   = fun g access ->
