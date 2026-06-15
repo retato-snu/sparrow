@@ -529,8 +529,18 @@ struct
   type node = BasicDom.Node.t
   type t = Set of Set.t | BDD of BDD.t
 
+	  (* Size-gated representation choice. The BDD DUG is the memory-at-scale
+	     representation: it is slower and heavier than the Set DUG on programs
+	     that fit in memory, and only pays off past the memory wall (~150k DUG
+	     nodes, the emacs scale, where the Set DUG OOMs). So pick Set by default
+	     and switch to BDD only when forced (-bdd_dug) or when -bdd_auto fires at
+	     the node-count threshold. [size] is the DUG node count from SsaDug. *)
 	  let create ?(size=0) ?(loc_size=0) () =
-	    if !Options.bdd_dug then BDD (BDD.create ~size ~loc_size ())
+	    let use_bdd =
+	      !Options.bdd_dug
+	      || (!Options.bdd_auto && size >= !Options.bdd_auto_threshold)
+	    in
+	    if use_bdd then BDD (BDD.create ~size ~loc_size ())
 	    else Set (Set.create ~size ~loc_size ())
 
   let nb_node = function Set g -> Set.nb_node g | BDD g -> BDD.nb_node g

@@ -47,6 +47,8 @@ let preanalysis_order = ref "default"
 let profile = ref false
 let scaffold = ref true
 let bdd_dug = ref false
+let bdd_auto = ref false
+let bdd_auto_threshold = ref 150000
 let bdd_compact = ref false
 let bdd_compact_set_threshold = ref 8
 let dug_optimize = ref "off"
@@ -114,7 +116,9 @@ let opts =
   ("-oct", (Arg.Set oct), "Do octagon analysis");
   ("-taint", (Arg.Set taint), "Do taint analysis");
   ("-profile", (Arg.Set profile), "Profiler");
-  ("-bdd_dug", (Arg.Set bdd_dug), "Use experimental BDD-backed def-use graph");
+  ("-bdd_dug", (Arg.Set bdd_dug), "Force the BDD-backed def-use graph on every function (the memory-at-scale representation)");
+  ("-bdd_auto", (Arg.Set bdd_auto), "Use the BDD def-use graph only when the DUG node count reaches -bdd_auto_threshold (Set DUG otherwise; Set is faster and lighter below the memory wall)");
+  ("-bdd_auto_threshold", (Arg.Int (fun x -> bdd_auto_threshold := x)), "Node-count threshold at which -bdd_auto switches to the BDD DUG (default: 150000, ~the emacs-scale memory wall)");
   ("-bdd_compact", (Arg.Set bdd_compact), "Move BDD DUG set labels into the BDD store at construction end");
   ("-bdd_compact_set_threshold", (Arg.Int (fun x -> bdd_compact_set_threshold := x)), "Keep compact BDD DUG labels of size <= N in OCaml sets (default: 8)");
   ("-dug_optimize", (Arg.Set_string dug_optimize), "Def-use graph bypass optimization: off | join | all");
