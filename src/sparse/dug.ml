@@ -369,18 +369,16 @@ struct
     | _ -> set_locs
 
   let get_duset src dst dug =
-    if !Options.bdd_compact then
-      DUSet.Current (get_abslocs src dst dug, None)
-    else
-      let set_locs = set_label src dst dug in
-      let bdd =
-        if not dug.bdd_initialized then None
-        else match find_node_id src dug, find_node_id dst dug with
-        | Some src_id, Some dst_id when Bddset.subset_sd src_id dst_id ->
-          Some (fun loc -> find_loc_id loc dug)
-        | _ -> None
-      in
-      DUSet.Current (set_locs, bdd)
+    (* Eager materialization (soundness fix). The previous lazy BDD-membership
+       path relied on a GLOBAL mutable sub_bdd: subset_sd (here) set it, mem_sub
+       (in mem_duset) queried it. sparseAnalysis defers the mem_duset closure
+       past other edges' get_duset calls, which clobber the global sub_bdd ->
+       wrong def-use membership -> unsound divergence (less-382: 331/606 vs the
+       correct 325/612). Materializing the edge's locset now makes mem_duset a
+       pure, reentrant set test. Storage stays BDD-compressed; only this edge's
+       transient locset is built -- exactly what get_abslocs already does on the
+       hot path, so no new asymptotic cost. *)
+    DUSet.Current (get_abslocs src dst dug, None)
 
   let mem_duset loc duset =
     match duset with
