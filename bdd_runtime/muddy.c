@@ -634,17 +634,20 @@ EXTERNML value mlbdd_muddy_find_sub_bdd(value n1, value n2)
 	q = v[i]?bdd_high(q):bdd_low(q);
   }
 
-  sub_bdd = q;
+  sub_bdd = q;       /* kept for the legacy enumeration path (next/extract_sub) */
   bdd_reset=1;
-  return Val_bool(q>0);
+  return Val_int(q);  /* REENTRANT: return the (src,dst) sub-BDD handle so a later
+                         mem_sub queries THIS edge, not a global sub_bdd that other
+                         edges' find_sub calls clobber. Safe: the BDD is frozen
+                         during the fixpoint (no add/remove -> no GC). */
 }
 
-// bool mem_sub n3
-EXTERNML value mlbdd_muddy_mem_sub(value n3)
+// bool mem_sub (handle, n3)
+EXTERNML value mlbdd_muddy_mem_sub(value handle, value n3)
 {
   char* v = bitv(0,0,Int_val(n3));
 
-  BDD q = sub_bdd;
+  BDD q = Int_val(handle);
   int i;
   while (q>1)
   {

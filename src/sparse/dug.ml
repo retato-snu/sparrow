@@ -228,11 +228,16 @@ struct
   module LocTbl = Hashtbl.Make(struct
     type t = loc
     let equal x y = Loc.compare x y = 0
-    let hash = Hashtbl.hash
+    (* MUST be consistent with [equal]: structural Hashtbl.hash breaks the table
+       invariant (Loc.compare-equal locs can hash differently), so find_loc_id
+       misses construction-time locs when queried with a compare-equal loc rebuilt
+       in the fixpoint -> the lazy BDD membership silently missed members. Hash the
+       canonical string form, which agrees with Loc.compare. *)
+    let hash x = Hashtbl.hash (Loc.to_string x)
   end)
 
   module DUSet = struct
-    type t = Current of locset * (loc -> int option) option
+    type t = Current of locset * (int * (loc -> int option)) option
   end
 
 		  type t = {
@@ -357,7 +362,7 @@ struct
 	    let set_locs = current_set_label src dst dug in
 	    if not dug.bdd_initialized then set_locs
     else match find_node_id src dug, find_node_id dst dug with
-    | Some src_id, Some dst_id when Bddset.subset_sd src_id dst_id ->
+    | Some src_id, Some dst_id when Bddset.subset_sd src_id dst_id > 0 ->
       let rec fold acc =
         match Bddset.next () with
         | -1 -> acc
@@ -369,27 +374,32 @@ struct
     | _ -> set_locs
 
   let get_duset src dst dug =
-    (* Eager materialization (soundness fix). The previous lazy BDD-membership
-       path relied on a GLOBAL mutable sub_bdd: subset_sd (here) set it, mem_sub
-       (in mem_duset) queried it. sparseAnalysis defers the mem_duset closure
-       past other edges' get_duset calls, which clobber the global sub_bdd ->
-       wrong def-use membership -> unsound divergence (less-382: 331/606 vs the
-       correct 325/612). Materializing the edge's locset now makes mem_duset a
-       pure, reentrant set test. Storage stays BDD-compressed; only this edge's
-       transient locset is built -- exactly what get_abslocs already does on the
-       hot path, so no new asymptotic cost. *)
-    DUSet.Current (get_abslocs src dst dug, None)
+    (* Reentrant lazy membership: capture this edge's sub-BDD HANDLE and carry it,
+       so mem_duset tests membership in O(bits) without re-materialising the whole
+       label set per access (the eager path dominated the fixpoint). The handle
+       targets THIS edge (not a clobberable global sub_bdd) and stays valid
+       because the BDD is frozen during the fixpoint. set_locs carries the
+       OCaml-set part (compact mode); empty in non-compact. *)
+    let set_locs = current_set_label src dst dug in
+    if not dug.bdd_initialized then DUSet.Current (set_locs, None)
+    else match find_node_id src dug, find_node_id dst dug with
+    | Some src_id, Some dst_id ->
+      let handle = Bddset.subset_sd src_id dst_id in
+      if handle > 0 then
+        DUSet.Current (set_locs, Some (handle, (fun loc -> find_loc_id loc dug)))
+      else DUSet.Current (set_locs, None)
+    | _ -> DUSet.Current (set_locs, None)
 
   let mem_duset loc duset =
     match duset with
     | DUSet.Current (set_locs, bdd) ->
       PowLoc.mem loc set_locs ||
-      match bdd with
-      | None -> false
-      | Some find_id ->
-        match find_id loc with
-        | None -> false
-        | Some loc_id -> Bddset.mem_sub loc_id
+      (match bdd with
+       | None -> false
+       | Some (handle, find_id) ->
+         match find_id loc with
+         | None -> false
+         | Some loc_id -> Bddset.mem_sub handle loc_id)
 
 	  let add_abslocs_to_bdd src locs dst dug =
 	    ensure_bdd_initialized dug;

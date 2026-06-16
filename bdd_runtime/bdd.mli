@@ -14,8 +14,8 @@ val bdd_remove : int -> int -> int -> unit
 
 val bdd_mem : int -> int -> int -> bool
 
-val bdd_find_sub : int -> int -> bool
-val bdd_mem_sub : int -> bool
+val bdd_find_sub : int -> int -> int
+val bdd_mem_sub : int -> int -> bool
 val bdd_next : unit -> int
 
 val bdd_save : string -> unit

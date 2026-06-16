@@ -51,8 +51,8 @@ let subset_sd n1 n2 =
 let mem (n1,n2,n3) = 
   bdd_mem n1 n2 n3
 
-let mem_sub n3 =
-  bdd_mem_sub n3
+let mem_sub handle n3 =
+  bdd_mem_sub handle n3
 
 let next = bdd_next
 let finish () = finish ()

@@ -10,8 +10,8 @@
     
     external bdd_mem : int -> int -> int -> bool = "mlbdd_muddy_mem"
 
-    external bdd_find_sub : int -> int -> bool = "mlbdd_muddy_find_sub_bdd"
-    external bdd_mem_sub : int -> bool = "mlbdd_muddy_mem_sub"
+    external bdd_find_sub : int -> int -> int = "mlbdd_muddy_find_sub_bdd"
+    external bdd_mem_sub : int -> int -> bool = "mlbdd_muddy_mem_sub"
     external bdd_next : unit -> int = "mlbdd_muddy_next"
 
     external bdd_save : string -> unit = "mlbdd_bdd_fnsave"
