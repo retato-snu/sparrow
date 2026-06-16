@@ -282,10 +282,21 @@ let is_callnode : node -> t -> bool
   | Cmd.Ccall _ -> true
   | _ -> false
 
+(* A node is a return-node iff it is the (unique) return-successor of its
+   (unique) call-node predecessor.  The old definition only checked "the single
+   predecessor is a call-node", which misclassifies the node after a synthetic
+   `sparrow_array_init` Ccall (these are not real calls and the optimizer can
+   leave them with succ-count <> 1): such a successor is NOT a real return-node,
+   yet callof/returnof (which require the call's single successor to be this
+   node) then cannot resolve it.  Requiring returnof-consistency here makes
+   is_returnnode and callof agree by construction -- identical to the old
+   behaviour on every well-formed call/return pair, and correct on malformed
+   ones. *)
 let is_returnnode : node -> t -> bool
 =fun n g ->
-  List.length (pred n g) = 1 &&
-  is_callnode (List.hd (pred n g)) g
+  match pred n g with
+  | [ c ] -> is_callnode c g && (match succ c g with [ r ] -> r = n | _ -> false)
+  | _ -> false
 
 let entryof _ = Node.ENTRY
 let exitof _ = Node.EXIT
@@ -303,7 +314,11 @@ let is_inside_loop : node -> t -> bool
 let callof : node -> t -> node
 =fun r g ->
   try
-    List.find (fun c -> is_callnode c g && returnof c g = r) (nodesof g)
+    (* returnof asserts succ-length = 1; a malformed call-node elsewhere must
+       not abort the search for r's own call-node, so swallow it per candidate. *)
+    List.find
+      (fun c -> is_callnode c g && (try returnof c g = r with _ -> false))
+      (nodesof g)
   with _ ->
     failwith "IntraCfg.callof: given node may not be a return-node"
 
@@ -718,7 +733,14 @@ let insert_return_before_exit : t -> t
     | Cmd.Creturn _ -> acc
     | _ -> add_new_node node (Cmd.Creturn (None, locUnknown)) Node.EXIT acc
   in
-  list_fold add_return (pred Node.EXIT g) g
+  (* A never-returning function (e.g. an infinite loop, or a body that only
+     exit()s/abort()s) has no node flowing to EXIT, so EXIT is never added to
+     the graph.  Whole-program Sparrow never sees these (mergecil + reachability
+     prune them), but the per-module CFG build does -- guard against asking
+     ocamlgraph for the predecessors of a vertex that is not present. *)
+  if G.mem_vertex g.graph Node.EXIT then
+    list_fold add_return (pred Node.EXIT g) g
+  else g
 
 let compute_dom : t -> t
 =fun g ->
