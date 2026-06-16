@@ -166,9 +166,15 @@ struct
     (works, global, inputof, Table.add idx new_output outputof)
 
   let get_unstable dug idx should_widen works old_output (new_output, global) =
+    (* Use the node's DEFINED locs (cached, bounded by outgoing-edge labels) for
+       the instability check -- including in BDD mode. The old BDD shortcut
+       [Dom.keys new_output] scans the WHOLE output memory, which grows as the
+       fixpoint accumulates state, so per-iteration cost grew without bound (the
+       giants' fixpoint never converged). get_def_locs is computed once per node
+       and reused; the result is unchanged (the extra pass-through locs are
+       filtered out on each edge by mem_edge anyway). *)
     let def_locs =
-      if DUGraph.is_bdd dug then Dom.keys new_output
-      else Profiler.event "SparseAnalysis.widening_get_def_locs" (get_def_locs idx) dug
+      Profiler.event "SparseAnalysis.widening_get_def_locs" (get_def_locs idx) dug
     in
     let is_unstb v1 v2 = not (Dom.B.le v2 v1) in
     let u = Profiler.event "SparseAnalysis.widening_unstable" (Dom.unstables old_output new_output is_unstb) def_locs in
