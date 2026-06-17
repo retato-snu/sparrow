@@ -62,6 +62,17 @@ struct
   module A = A
   module B = B
 
+  (* Hash-cons abstract values so identical B.t objects (e.g. the same interval
+     held at thousands of CFG nodes) are PHYSICALLY SHARED across all per-node
+     memories instead of duplicated. This is the GSAF reference's key memory
+     technique (dMap.ml b_hashcons) and the missing piece behind the port's ~3x
+     fixpoint memory vs the paper on large programs (emacs). Values are
+     immutable, so sharing is semantics-preserving; the table holds one copy per
+     distinct value (bounded in practice for the interval lattice). *)
+  let b_table : (B.t, B.t) Hashtbl.t = Hashtbl.create 251
+  let b_hashcons (v : B.t) : B.t =
+    try Hashtbl.find b_table v with Not_found -> Hashtbl.add b_table v v; v
+
   let to_string : t -> string = fun x ->
     let add_string_of_k_v k v acc =
       let str = A.to_string k ^ " -> " ^ B.to_string v in
@@ -134,7 +145,7 @@ struct
         | None, Some v
         | Some v, None -> if B.eq v B.bot then None else Some v
         | Some v1, Some v2 ->
-          let joined_v = B.join v1 v2 in
+          let joined_v = b_hashcons (B.join v1 v2) in
           if B.eq joined_v B.bot then None else Some joined_v in
       BatMap.merge join' x y
 
@@ -147,7 +158,7 @@ struct
         | None, _
         | _, None -> None
         | Some v1, Some v2 ->
-          let meeted_v = B.meet v1 v2 in
+          let meeted_v = b_hashcons (B.meet v1 v2) in
           if B.eq meeted_v B.bot then None else Some meeted_v in
       BatMap.merge meet' x y
 
@@ -159,7 +170,7 @@ struct
         | None, Some v
         | Some v, None -> if B.eq v B.bot then None else Some v
         | Some v1, Some v2 ->
-          let widened_v = B.widen v1 v2 in
+          let widened_v = b_hashcons (B.widen v1 v2) in
           if B.eq widened_v B.bot then None else Some widened_v in
       BatMap.merge widen' x y
 
@@ -169,7 +180,7 @@ struct
         match opt_v1, opt_v2 with
         | _, None | None, _ -> None
         | Some v1, Some v2 ->
-          let narrowed_v = B.narrow v1 v2 in
+          let narrowed_v = b_hashcons (B.narrow v1 v2) in
           if B.eq narrowed_v B.bot then None else Some narrowed_v in
       BatMap.merge narrow' x y
 
@@ -184,20 +195,20 @@ struct
   let find : A.t -> t -> B.t = fun k a -> try BatMap.find k a with _ -> B.bot
 
   let add : A.t -> B.t -> t -> t = fun k v x ->
-    if B.eq v B.bot then BatMap.remove k x else BatMap.add k v x
+    if B.eq v B.bot then BatMap.remove k x else BatMap.add k (b_hashcons v) x
 
   let weak_add : A.t -> B.t -> t -> t = fun k v x ->
     if B.eq v B.bot then x else
-      BatMap.modify_def v k (fun orig_v ->
+      BatMap.modify_def (b_hashcons v) k (fun orig_v ->
         if B.le v orig_v then orig_v
-        else if B.le orig_v v then v
-        else B.join orig_v v) x
+        else if B.le orig_v v then b_hashcons v
+        else b_hashcons (B.join orig_v v)) x
 
   let widen_add : A.t -> B.t -> t -> t = fun k v x ->
     if B.eq v B.bot then x else
-      BatMap.modify_def v k (fun orig_v ->
+      BatMap.modify_def (b_hashcons v) k (fun orig_v ->
         if B.le v orig_v then orig_v
-        else B.widen orig_v v) x
+        else b_hashcons (B.widen orig_v v)) x
 
   let remove : A.t -> t -> t = BatMap.remove
   let iter = BatMap.iter
@@ -208,9 +219,9 @@ struct
       [\[x |-> B.bot\]] and [\[ \]] are the same map,  it is natural
       that [map f \[x |-> B.bot\]] and [map f \[ \]] return the same
       value.  *)
-  let map = BatMap.map
+  let map f = BatMap.map (fun v -> b_hashcons (f v))
 
-  let mapi = BatMap.mapi
+  let mapi f = BatMap.mapi (fun k v -> b_hashcons (f k v))
 
   (** The first argument of map,  function f,  should preserve the
       bottom value for consistency,  e.g. [f B.bot acc = acc].  Since
