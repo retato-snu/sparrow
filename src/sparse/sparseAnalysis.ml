@@ -68,7 +68,17 @@ struct
   let needwidening : bool -> DUGraph.node -> Worklist.t -> bool
   =fun should_widen idx wl -> should_widen && Worklist.is_loopheader idx wl
 
+  (* FIFO-bounded def-locs cache. The def-locs of a node (union of its outgoing
+     edge labels) are immutable, so caching them avoids recomputing per visit.
+     But caching ALL nodes materialises ~the whole def-use relation as OCaml sets
+     -- on emacs (153k nodes) that added ~9GB and blew the memory budget, undoing
+     BDD's compression. Bound the cache to the active working set: at capacity,
+     evict the oldest entry (a miss just recomputes from the BDD). Cap is 0 =
+     unbounded (default for small runs); set via SPARROW_DEFLOCS_CACHE_CAP. *)
   let def_locs_cache = Hashtbl.create 251
+  let def_locs_order : Node.t Queue.t = Queue.create ()
+  let def_locs_cap =
+    try int_of_string (Sys.getenv "SPARROW_DEFLOCS_CACHE_CAP") with _ -> 50000
   let get_def_locs : Node.t -> DUGraph.t -> Access.PowLoc.t
   = fun idx dug ->
     try Hashtbl.find def_locs_cache idx with Not_found ->
@@ -76,10 +86,16 @@ struct
       let union_locs succ = PowLoc.union (DUGraph.get_abslocs idx succ dug) in
       DUGraph.fold_succ union_locs dug idx PowLoc.empty
     in
-    Hashtbl.add def_locs_cache idx def_locs; def_locs
+    if def_locs_cap > 0 && Hashtbl.length def_locs_cache >= def_locs_cap then
+      (try Hashtbl.remove def_locs_cache (Queue.pop def_locs_order)
+       with Queue.Empty -> ());
+    Hashtbl.replace def_locs_cache idx def_locs;
+    Queue.push idx def_locs_order;
+    def_locs
 
   let clear_cache () =
     Hashtbl.clear def_locs_cache;
+    Queue.clear def_locs_order;
     SsaDug.clear_cache ()
 
   let join_pairs_on_edge mem_edge pairs input =
