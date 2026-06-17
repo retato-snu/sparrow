@@ -321,16 +321,24 @@ struct
     my_prerr_endline "draw inter-procedural edges";
     list_fold (fun call (k,dug) ->
       prerr_progressbar k n_calls;
-      let return = InterCfg.returnof call global.icfg in
-        (k+1, ProcSet.fold (fun callee dug ->
-          let entry = InterCfg.entryof global.icfg callee in
-          let exit  = InterCfg.exitof  global.icfg callee in
-          let locs_on_call = uses_of_function global access callee locset in
-          let locs_on_return = defs_of_function global access callee locset in
-            dug
-            |> DUGraph.add_abslocs call locs_on_call entry
-            |> DUGraph.add_abslocs exit locs_on_return return
-        ) (InterCfg.get_callees call global.icfg) dug)
+      let callees = InterCfg.get_callees call global.icfg in
+        (* no-callee call nodes (e.g. the synthetic `sparrow_array_init`, which
+           is a Ccall with succ-count <> 1) draw no inter-procedural edges --
+           guard so `returnof` (which asserts a single successor) is only taken
+           for real calls.  Identical to the old behaviour on real calls. *)
+        (k+1,
+         if ProcSet.is_empty callees then dug
+         else
+           let return = InterCfg.returnof call global.icfg in
+           ProcSet.fold (fun callee dug ->
+             let entry = InterCfg.entryof global.icfg callee in
+             let exit  = InterCfg.exitof  global.icfg callee in
+             let locs_on_call = uses_of_function global access callee locset in
+             let locs_on_return = defs_of_function global access callee locset in
+               dug
+               |> DUGraph.add_abslocs call locs_on_call entry
+               |> DUGraph.add_abslocs exit locs_on_return return
+           ) callees dug)
     ) calls (1,dug)
     |> snd
 
