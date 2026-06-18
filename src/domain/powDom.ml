@@ -74,31 +74,40 @@ struct
   let eq : t -> t -> bool = fun x y ->
     if x == y then true else BatSet.equal x y
 
+  (* Hash-cons location sets (GSAF reference's pow.ml technique): each distinct
+     set becomes ONE physical object shared across all node memories. Together
+     with itv hash-consing this is the component-level sharing that closes the
+     memory gap to the paper. Global + uncleared, matching the reference. *)
+  let table = Hashtbl.create 251
+  let hashcons x =
+    try Hashtbl.find table x with
+      Not_found -> Hashtbl.add table x x; x
+
   let bot = BatSet.empty
   let empty = bot
 
   let join : t -> t -> t = fun x y ->
     if le x y then y else
     if le y x then x else
-      BatSet.union x y
+      hashcons (BatSet.union x y)
   let union = join
   let union_small_big small big = BatSet.fold BatSet.add small big
 
   let meet : t -> t -> t = fun x y ->
     if le x y then x else
     if le y x then y else
-      BatSet.inter x y
+      hashcons (BatSet.inter x y)
   let inter = meet
 
   (* Since module A is finite,  widening is defined as union which is
      sufficient to guarantee analysis termination.  *)
   let widen : t -> t -> t = fun x y ->
     if x == y then x else
-      BatSet.union x y
+      hashcons (BatSet.union x y)
 
   let narrow : t -> t -> t = fun x y ->
     if x == y then x else
-      BatSet.inter x y
+      hashcons (BatSet.inter x y)
 
 
   let filter : (elt -> bool) -> t -> t = fun f s ->

@@ -189,6 +189,16 @@ let is_bot : t -> bool = function
     [Bot].*)
 let normalize x = if is_bot x then Bot else x
 
+(* Hash-cons intervals (the leaf abstract value) -- GSAF reference's itv.ml
+   technique. Each distinct interval becomes ONE physical object shared across
+   all ~150k node memories; this component-level sharing is the load-bearing
+   memory fix (two memories differing in one loc still share every common
+   interval). Table is global + uncleared, matching the reference. *)
+let table = Hashtbl.create 251
+let hashcons x =
+  try Hashtbl.find table x with
+    Not_found -> Hashtbl.add table x x; x
+
 let absolute = function
   | Bot -> Bot
   | V (l, u) ->
@@ -212,7 +222,7 @@ let eq : t -> t -> bool = fun x y ->
     | _, _ -> assert false
 
 
-let top : t = V (MInf, PInf)
+let top : t = hashcons (V (MInf, PInf))
 let bot : t = Bot
 
 
@@ -222,7 +232,7 @@ let join : t -> t -> t = fun x y ->
   if is_bot x then normalize y else
   if is_bot y then normalize x else
     match x, y with
-    | V (l1, u1), V (l2, u2) -> V (Integer.min l1 l2, Integer.max u1 u2)
+    | V (l1, u1), V (l2, u2) -> hashcons (V (Integer.min l1 l2, Integer.max u1 u2))
     | _, _ -> assert false
 
 
@@ -233,7 +243,7 @@ let meet : t -> t -> t = fun x y ->
   if is_bot y then Bot else
     match x, y with
     | V (l1, u1), V (l2, u2) ->
-      normalize (V (Integer.max l1 l2, Integer.min u1 u2))
+      hashcons (normalize (V (Integer.max l1 l2, Integer.min u1 u2)))
     | _, _ -> assert false
 
 
@@ -243,7 +253,7 @@ let widen : t -> t -> t = fun x y ->
   if is_bot y then normalize x else
     match x, y with
     | V (l1, u1), V (l2, u2) ->
-      V (Integer.lower_widen l1 l2, Integer.upper_widen u1 u2)
+      hashcons (V (Integer.lower_widen l1 l2, Integer.upper_widen u1 u2))
     | _, _ -> assert false
 
 
@@ -253,7 +263,7 @@ let narrow : t -> t -> t = fun x y ->
   if is_bot x then invalid_arg "itv.ml: narrow(bot, _)" else
     match x, y with
     | V (l1, u1), V (l2, u2) ->
-      V (Integer.lower_narrow l1 l2, Integer.upper_narrow u1 u2)
+      hashcons (V (Integer.lower_narrow l1 l2, Integer.upper_narrow u1 u2))
     | _, _ -> assert false
 
 
@@ -322,13 +332,13 @@ let diff (x:t) : int =
 let plus (x:t) (y:t) : t =
   if is_bot x || is_bot y then Bot else
     match x, y with
-    | V (l1, u1), V (l2, u2) -> V (Integer.plus l1 l2, Integer.plus u1 u2)
+    | V (l1, u1), V (l2, u2) -> hashcons (V (Integer.plus l1 l2, Integer.plus u1 u2))
     | _, _ -> assert false
 
 let minus (x:t) (y:t) : t =
   if is_bot x || is_bot y then Bot else
     match x, y with
-    | V (l1, u1), V (l2, u2) -> V (Integer.minus l1 u2, Integer.minus u1 l2)
+    | V (l1, u1), V (l2, u2) -> hashcons (V (Integer.minus l1 u2, Integer.minus u1 l2))
     | _, _ -> assert false
 
 let times (x:t) (y:t) : t =
@@ -339,7 +349,7 @@ let times (x:t) (y:t) : t =
       let x2 = Integer.times l1 u2 in
       let x3 = Integer.times u1 l2 in
       let x4 = Integer.times u1 u2 in
-      V (Integer.min4 x1 x2 x3 x4, Integer.max4 x1 x2 x3 x4)
+      hashcons (V (Integer.min4 x1 x2 x3 x4, Integer.max4 x1 x2 x3 x4))
     | _, _ -> assert false
 
 let divide (x:t) (y:t) : t =
@@ -351,12 +361,12 @@ let divide (x:t) (y:t) : t =
       let x2 = Integer.divide l1 u2 in
       let x3 = Integer.divide u1 l2 in
       let x4 = Integer.divide u1 u2 in
-      V (Integer.min4 x1 x2 x3 x4, Integer.max4 x1 x2 x3 x4)
+      hashcons (V (Integer.min4 x1 x2 x3 x4, Integer.max4 x1 x2 x3 x4))
     | _, _ -> assert false
 
-let false_itv : t = V (Int 0, Int 0)
-let true_itv : t = V (Int 1, Int 1)
-let unknown_bool_itv : t = V (Int 0, Int 1)
+let false_itv : t = hashcons (V (Int 0, Int 0))
+let true_itv : t = hashcons (V (Int 1, Int 1))
+let unknown_bool_itv : t = hashcons (V (Int 0, Int 1))
 
 let l_and (x:t) (y:t) : t =
   if is_bot x || is_bot y then
@@ -499,4 +509,4 @@ let prune : Sparrow_cil.binop -> t -> t -> t = fun op x y ->
         V (Integer.plus a (Int 1), b)
       | Sparrow_cil.Ne, V _, V _ -> x
       | _ -> invalid_arg "itv.ml:prune" in
-    normalize pruned
+    hashcons (normalize pruned)
