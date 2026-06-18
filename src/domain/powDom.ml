@@ -17,6 +17,8 @@ sig
   include CPO
   type elt
 
+  val set_b_hashcons : bool -> unit
+
   val empty : t
   val filter : (elt -> bool) -> t -> t
   val fold : (elt -> 'a -> 'a) -> t -> 'a -> 'a
@@ -79,8 +81,17 @@ struct
      with itv hash-consing this is the component-level sharing that closes the
      memory gap to the paper. Global + uncleared, matching the reference. *)
   let table = Hashtbl.create 251
+  (* On by default (the GSAF sharing technique).  Disabled for the modular /
+     separate-compilation path: across Marshaled artifacts the set's elements carry
+     the CYCLIC Cil.typ inside Locs, and the structural Hashtbl lookup deep-compares
+     them and overflows (spurious Out_of_memory) -- the same break as the mapDom
+     b_hashcons (whole-program is safe via physical sharing).  Sound either way (only
+     drops cross-value physical sharing). *)
+  let b_hashcons_on = ref true
+  let set_b_hashcons (on : bool) = b_hashcons_on := on
   let hashcons x =
-    try Hashtbl.find table x with
+    if not !b_hashcons_on then x
+    else try Hashtbl.find table x with
       Not_found -> Hashtbl.add table x x; x
 
   let bot = BatSet.empty
@@ -158,6 +169,8 @@ struct
   module PowCPO = MakeCPO(A)
   type t = V of PowCPO.t | Top [@@deriving compare]
   type elt = A.t
+
+  let set_b_hashcons = PowCPO.set_b_hashcons
 
   exception Error
 

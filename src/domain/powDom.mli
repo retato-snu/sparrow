@@ -15,6 +15,11 @@ sig
   include AbsDom.CPO
   type elt
 
+  (* disable hash-consing of sets -- needed for the modular / separate-compilation
+     path where Marshaled elements carry cyclic Cil.typ that the hash-cons lookup's
+     structural compare overflows on.  Sound (sharing-only). *)
+  val set_b_hashcons : bool -> unit
+
   val empty : t
   val filter : (elt -> bool) -> t -> t
   val fold : (elt -> 'a -> 'a) -> t -> 'a -> 'a
