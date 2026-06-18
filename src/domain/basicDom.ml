@@ -82,13 +82,18 @@ struct
       let c = Proc.compare p1 p2 in
       if c = 0 then String.compare l1 l2 else c
     | Allocsite a1, Allocsite a2 -> Allocsite.compare a1 a2
-    | Field (l1, f1, t1), Field (l2, f2, t2) ->
+    | Field (l1, f1, _t1), Field (l2, f2, _t2) ->
+      (* base Loc + field name fully identify the field location; the field's
+         type is determined by them, so it is NOT a tiebreaker.  Comparing the
+         types here via Sparrow_cil.typeSig invoked Cil.bitsSizeOf, which needs
+         CIL global machine state and RAISES (Errormsg.Error / spurious
+         Out_of_memory) on the types carried through Marshaled, separately-
+         compiled artifacts -- crashing the separate-compilation link.  In the
+         whole-program path same base+field already had identical typeSig (compare
+         = 0), so dropping it is behavior-preserving there and makes the modular
+         link robust. *)
       let c = compare l1 l2 in
-      if c = 0 then
-        let c = String.compare f1 f2 in
-        if c = 0 then Stdlib.compare (Sparrow_cil.typeSig t1) (Sparrow_cil.typeSig t2)
-        else c
-      else c
+      if c = 0 then String.compare f1 f2 else c
     | _, _ -> Stdlib.compare (tag_of_t x) (tag_of_t y)
   and tag_of_t = function GVar _ -> 0 | LVar _ -> 1 | Allocsite _ -> 2 | Field _ -> 3
 

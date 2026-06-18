@@ -21,6 +21,8 @@ sig
 
   (* reset this instance's value hash-cons table; see mapDom.mli *)
   val clear_b_table : unit -> unit
+  (* enable/disable value hash-consing for this instance; see mapDom.mli *)
+  val set_b_hashcons : bool -> unit
 
   val empty : t
   val is_empty : t -> bool
@@ -73,8 +75,20 @@ struct
      immutable, so sharing is semantics-preserving; the table holds one copy per
      distinct value (bounded in practice for the interval lattice). *)
   let b_table : (B.t, B.t) Hashtbl.t = Hashtbl.create 251
+  (* Hash-consing dedups by STRUCTURAL lookup (Hashtbl on B.t), which works only
+     when equal values are also physically shared in practice -- a whole-program
+     analysis builds its values from one CIL parse, so identical values are `==`
+     and the polymorphic compare short-circuits.  Across SEPARATE COMPILATION the
+     artifacts are Marshaled, which breaks that sharing; the lookup then does a
+     deep structural compare that walks the CYCLIC Cil.typ embedded in Locs and
+     overflows (spurious Out_of_memory).  So the modular link disables hash-consing
+     (set_b_hashcons false): the domain's own ops use the cycle-safe Loc.compare,
+     this table is the only site doing a polymorphic compare on the raw types. *)
+  let b_hashcons_on = ref true
   let b_hashcons (v : B.t) : B.t =
-    try Hashtbl.find b_table v with Not_found -> Hashtbl.add b_table v v; v
+    if not !b_hashcons_on then v
+    else try Hashtbl.find b_table v with Not_found -> Hashtbl.add b_table v v; v
+  let set_b_hashcons (on : bool) = b_hashcons_on := on
   (* drop the accumulated hash-cons table; sound (values are immutable and stay
      valid), only loses cross-solve sharing.  For the modular link's many
      independent open-solves -- the table otherwise pins every solve's values
@@ -330,6 +344,7 @@ struct
   let top = Top
 
   let clear_b_table () = MapCPO.clear_b_table ()
+  let set_b_hashcons on = MapCPO.set_b_hashcons on
 
   let to_string = function
     | V x -> MapCPO.to_string x

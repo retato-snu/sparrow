@@ -27,6 +27,15 @@ sig
      sharing.  No-op for single-solve clients (they never call it). *)
   val clear_b_table : unit -> unit
 
+  (* Enable/disable value hash-consing for this instance.  Hash-consing dedups by
+     a structural Hashtbl lookup; that lookup deep-compares values, which walks the
+     CYCLIC Cil.typ carried inside Locs.  A whole-program analysis is unaffected
+     (its equal values are physically shared, so compare short-circuits on ==), but
+     across SEPARATE COMPILATION (Marshaled artifacts) sharing is broken and the
+     deep compare overflows (spurious Out_of_memory).  The modular link disables it;
+     the domain's own ops use the cycle-safe Loc.compare instead. *)
+  val set_b_hashcons : bool -> unit
+
   val empty : t
   val is_empty : t -> bool
   val find : A.t -> t -> B.t

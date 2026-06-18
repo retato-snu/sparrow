@@ -326,6 +326,14 @@ let get_locset mem =
 
 let do_analysis : Global.t -> Global.t * Table.t * Table.t * Report.query list
 = fun global ->
+  (* whole-program analysis builds its values from one CIL parse, so equal values
+     are physically shared and value hash-consing is the intended memory win.  Make
+     sure it is ON even if a modular link earlier in this process disabled it (the
+     modular separate-compilation link turns it off because Marshaled artifacts break
+     the sharing -- see mapDom.mli / modular_core link). *)
+  Mem.set_b_hashcons true;
+  Table.set_b_hashcons true;
+  Dump.set_b_hashcons true;
   let _ = prerr_memory_usage () in
   let locset = get_locset global.mem in
   let locset_fs = PartialFlowSensitivity.select global locset in
