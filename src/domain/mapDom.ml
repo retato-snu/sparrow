@@ -19,6 +19,9 @@ sig
   module B : AbsDom.CPO
   module PowA : PowDom.CPO with type elt = A.t
 
+  (* reset this instance's value hash-cons table; see mapDom.mli *)
+  val clear_b_table : unit -> unit
+
   val empty : t
   val is_empty : t -> bool
   val find : A.t -> t -> B.t
@@ -72,6 +75,11 @@ struct
   let b_table : (B.t, B.t) Hashtbl.t = Hashtbl.create 251
   let b_hashcons (v : B.t) : B.t =
     try Hashtbl.find b_table v with Not_found -> Hashtbl.add b_table v v; v
+  (* drop the accumulated hash-cons table; sound (values are immutable and stay
+     valid), only loses cross-solve sharing.  For the modular link's many
+     independent open-solves -- the table otherwise pins every solve's values
+     and leaks to OOM.  See mapDom.mli. *)
+  let clear_b_table () = Hashtbl.reset b_table
 
   let to_string : t -> string = fun x ->
     let add_string_of_k_v k v acc =
@@ -320,6 +328,8 @@ struct
 
   let bot = V MapCPO.bot
   let top = Top
+
+  let clear_b_table () = MapCPO.clear_b_table ()
 
   let to_string = function
     | V x -> MapCPO.to_string x

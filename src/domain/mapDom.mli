@@ -17,6 +17,16 @@ sig
   module B : AbsDom.CPO
   module PowA : PowDom.CPO with type elt = A.t
 
+  (* Reset this instance's value hash-cons table (b_table).  The table pins one
+     copy of every distinct B.t ever hashconsed and is never cleared on its own;
+     a single whole-program analysis stays bounded, but a client that runs MANY
+     independent solves in one process (the modular per-module open-solve +
+     re-solves) accumulates every solve's values and leaks until OOM.  Clearing
+     between independent solves is sound -- hash-consing is only an optimization,
+     all existing values remain valid -- it only drops cross-solve physical
+     sharing.  No-op for single-solve clients (they never call it). *)
+  val clear_b_table : unit -> unit
+
   val empty : t
   val is_empty : t -> bool
   val find : A.t -> t -> B.t
