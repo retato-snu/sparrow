@@ -84,7 +84,14 @@ struct
      overflows (spurious Out_of_memory).  So the modular link disables hash-consing
      (set_b_hashcons false): the domain's own ops use the cycle-safe Loc.compare,
      this table is the only site doing a polymorphic compare on the raw types. *)
-  let b_hashcons_on = ref true
+  (* DEFAULT OFF in the BDD memory lane: this table hashes whole Vals/Mems with a
+     polymorphic Hashtbl that walks the cyclic Cil.typ in Locs -> slow fixpoint at
+     emacs scale. The cycle-safe component-level hash-consing (itv.ml + powDom.ml)
+     already shares the heavy sub-objects (intervals, loc-sets) across all node
+     memories, which is the load-bearing memory win; whole-Mem dedup on top costs
+     more than it saves once it has to deep-hash Cil.typ. (re-enable via
+     set_b_hashcons true.) *)
+  let b_hashcons_on = ref false
   let b_hashcons (v : B.t) : B.t =
     if not !b_hashcons_on then v
     else try Hashtbl.find b_table v with Not_found -> Hashtbl.add b_table v v; v

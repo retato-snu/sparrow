@@ -75,13 +75,28 @@ struct
     if x == y then true else BatSet.equal x y
 
   (* Hash-cons location sets (GSAF reference's pow.ml technique): each distinct
-     set becomes ONE physical object shared across all node memories. Together
-     with itv hash-consing this is the component-level sharing that closes the
-     memory gap to the paper. Global + uncleared, matching the reference. *)
-  let table = Hashtbl.create 251
+     set becomes ONE physical object shared across all node memories -- closes the
+     memory gap to the paper (emacs DUG construction 11.6GB -> 4.4GB). The table
+     MUST hash cycle-safely (via [A.to_string], which -- like [A.compare] --
+     ignores the cyclic Cil.typ) and compare via [BatSet.equal] (element
+     [A.compare]); the default polymorphic Hashtbl.hash walks the cyclic Cil.typ
+     inside Locs and was pathologically slow (emacs access analysis 204s ->
+     12950s). Cardinality + min/max element strings give a cheap, well-spread,
+     cycle-safe digest; collisions fall back to the exact BatSet.equal. *)
+  module HCTbl = Hashtbl.Make (struct
+    type nonrec t = t
+    let equal = BatSet.equal
+    let hash s =
+      if BatSet.is_empty s then 0
+      else Hashtbl.hash
+             (BatSet.cardinal s,
+              A.to_string (BatSet.min_elt s),
+              A.to_string (BatSet.max_elt s))
+  end)
+  let table = HCTbl.create 251
   let hashcons x =
-    try Hashtbl.find table x with
-      Not_found -> Hashtbl.add table x x; x
+    try HCTbl.find table x with
+      Not_found -> HCTbl.add table x x; x
 
   let bot = BatSet.empty
   let empty = bot

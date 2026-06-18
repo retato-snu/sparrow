@@ -107,6 +107,17 @@ struct
 
   let pp fmt x = Format.fprintf fmt "%s" (to_string x)
 
+  (* Cycle-safe hash, consistent with [compare] (both ignore the Cil.typ, which
+     is the only cyclic field). The default polymorphic Hashtbl.hash walks into
+     the cyclic Cil.typ, which made the value/loc-set hash-consing pathologically
+     slow on large programs (emacs access analysis 204s -> 12950s). This hashes
+     only the fields [compare] uses, so equal Locs hash equal. *)
+  let rec hash = function
+    | GVar (g, _) -> Hashtbl.hash (0, g)
+    | LVar (p, l, _) -> Hashtbl.hash (1, Proc.to_string p, l)
+    | Allocsite a -> Hashtbl.hash (2, Allocsite.to_string a)
+    | Field (l, f, _) -> Hashtbl.hash (3, hash l, f)
+
   let dummy = GVar ("__dummy__", Sparrow_cil.voidType)
   let null = GVar ("NULL", Sparrow_cil.voidPtrType)
 
