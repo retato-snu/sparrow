@@ -69,10 +69,28 @@ struct
     | External e -> Format.fprintf fmt "%a" ExtAllocsite.pp e
 end
 
+(* Interning table mapping [Cil.typ] to a small [int] id (and back).  [Loc]
+   carries this id instead of the [Cil.typ] itself, because the embedded
+   [Cil.typ] is cyclic: the default polymorphic hash/compare walk into the cycle,
+   which made loc-set / value hash-consing pathologically slow and memory-heavy
+   on large programs.  Interning is by [typeSig] (an acyclic structural
+   signature), so structurally-equal types share one id. *)
+module TypeIntern = struct
+  let by_sig : (Sparrow_cil.typsig, int) Hashtbl.t = Hashtbl.create 4096
+  let by_id  : Sparrow_cil.typ BatDynArray.t = BatDynArray.create ()
+  let intern t =
+    let s = Sparrow_cil.typeSig t in
+    match Hashtbl.find_opt by_sig s with
+    | Some id -> id
+    | None -> let id = BatDynArray.length by_id in
+              BatDynArray.add by_id t; Hashtbl.add by_sig s id; id
+  let lookup id = BatDynArray.get by_id id
+end
+
 module Loc =
 struct
-  type t = GVar of string * Sparrow_cil.typ | LVar of Proc.t * string * Sparrow_cil.typ
-         | Allocsite of Allocsite.t | Field of t * field * Sparrow_cil.typ
+  type t = GVar of string * int | LVar of Proc.t * string * int
+         | Allocsite of Allocsite.t | Field of t * field * int
   and field = string
 
   let rec compare x y =
@@ -97,7 +115,9 @@ struct
     | _, _ -> Stdlib.compare (tag_of_t x) (tag_of_t y)
   and tag_of_t = function GVar _ -> 0 | LVar _ -> 1 | Allocsite _ -> 2 | Field _ -> 3
 
-  let typ = function GVar (_, t) | LVar (_, _, t) | Field (_, _, t) -> Some t | _ -> None
+  let typ = function
+    | GVar (_, id) | LVar (_, _, id) | Field (_, _, id) -> Some (TypeIntern.lookup id)
+    | _ -> None
 
   let rec to_string = function
     | GVar (g, _) -> g
@@ -118,8 +138,8 @@ struct
     | Allocsite a -> Hashtbl.hash (2, Allocsite.to_string a)
     | Field (l, f, _) -> Hashtbl.hash (3, hash l, f)
 
-  let dummy = GVar ("__dummy__", Sparrow_cil.voidType)
-  let null = GVar ("NULL", Sparrow_cil.voidPtrType)
+  let dummy = GVar ("__dummy__", TypeIntern.intern Sparrow_cil.voidType)
+  let null = GVar ("NULL", TypeIntern.intern Sparrow_cil.voidPtrType)
 
   let is_null x = (x = null)
   let is_var : t -> bool = function
@@ -158,12 +178,12 @@ struct
   let get_proc : t -> Proc.t
   = function LVar (p, _, _) -> p | _ -> raise Not_found
 
-  let of_gvar x typ = GVar (x,typ)
-  let of_lvar p x typ = LVar (p,x,typ)
+  let of_gvar x typ = GVar (x, TypeIntern.intern typ)
+  let of_lvar p x typ = LVar (p, x, TypeIntern.intern typ)
   let of_allocsite : Allocsite.t -> t = fun x -> Allocsite x
-  let return_var pid typ = LVar (pid, "__return__", typ)
+  let return_var pid typ = LVar (pid, "__return__", TypeIntern.intern typ)
 
-  let append_field x f typ = Field (x,f,typ)
+  let append_field x f typ = Field (x, f, TypeIntern.intern typ)
 end
 
 module PowLoc =

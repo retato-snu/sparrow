@@ -26,9 +26,14 @@ module Allocsite : sig
   val allocsite_of_ext : string option -> t
 end
 
+module TypeIntern : sig
+  val intern : Sparrow_cil.typ -> int
+  val lookup : int -> Sparrow_cil.typ
+end
+
 module Loc : sig
-  type t = GVar of string * Sparrow_cil.typ | LVar of Proc.t * string * Sparrow_cil.typ | Allocsite of Allocsite.t
-  | Field of t * field * Sparrow_cil.typ
+  type t = GVar of string * int | LVar of Proc.t * string * int | Allocsite of Allocsite.t
+  | Field of t * field * int
   and field = string
   include AbsDom.SET with type t := t
   val null : t

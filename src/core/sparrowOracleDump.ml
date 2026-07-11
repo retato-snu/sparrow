@@ -594,7 +594,7 @@ let rec loc_id = function
   | Loc.LVar (pid, name, _) -> "lvar:" ^ pid ^ ":" ^ name
   | Loc.Allocsite allocsite -> "alloc:" ^ Allocsite.to_string allocsite
   | Loc.Field (base, field, typ) ->
-    "field:" ^ loc_id base ^ ":" ^ field ^ ":" ^ type_id typ
+    "field:" ^ loc_id base ^ ":" ^ field ^ ":" ^ type_id (TypeIntern.lookup typ)
 
 let loc_json loc =
   let kind =
@@ -790,7 +790,7 @@ let rec loc_types loc acc =
     | Some typ -> typ :: acc
   in
   match loc with
-  | Loc.Field (base, _, typ) -> loc_types base (typ :: acc)
+  | Loc.Field (base, _, typ) -> loc_types base (TypeIntern.lookup typ :: acc)
   | _ -> acc
 
 let global_types g acc =
