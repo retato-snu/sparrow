@@ -41,6 +41,11 @@ val unsound_lib : string BatSet.t ref
 val extract_loop_feat : bool ref
 val extract_lib_feat : bool ref
 val top_location : bool ref
+(** MODULAR-ONLY external-dereference floor (default false).  When set (only by the modular union), an
+    alarm's dereference/index base that evaluates to bot at a reachable node is floored to the saturating
+    external residual (TOP -> UnProven), never a suppressed alarm.  The whole-program oracle leaves it
+    false, so oracle alarms are byte-for-byte unchanged. *)
+val modular_extern_deref_floor : bool ref
 val bugfinder :  int ref
 val unsound_recursion : bool ref
 val unsound_alloc : bool ref

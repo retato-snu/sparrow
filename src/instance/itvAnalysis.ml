@@ -82,18 +82,79 @@ let check_nd v1 : (status * Allocsite.t option * string) list =
       [(UnProven, None, "Null Dereference")]
     else [(Proven, None, "")]
 
+(* MODULAR EXTERNAL-DEREF FLOOR (Options.modular_extern_deref_floor, default OFF -> oracle unchanged).
+   The saturating external residual value for a dereference/index base the modular union lost to bot:
+   an external ARRAY over a fresh ext allocsite (ArrayBlk.extern -> size TOP, so a BO index is UnProven)
+   JOINED with a NULL points-to (so a ND deref is UnProven "Null Dereference", never a vacuous proof).
+   This is EXACTLY the sound residual-TOP of a genuinely-open input (Boundary Fidelity); it can only
+   turn a bot base into an honest UnProven, never into a false Proven and never weaken a real proof. *)
+let extern_deref_floor_val : Val.t =
+  Val.join (Val.of_pow_loc (PowLoc.singleton Loc.null))
+    (Val.external_value (Allocsite.allocsite_of_ext None))
+
+(* Floor a deref/index BASE value [v] when the component the alarm check reads is bot at a REACHABLE
+   node.  The [mem] passed here is the node's INPUT memory (generate: Table.find node inputof), and
+   generate already filters dead code (mem = Mem.bot -> skipped), so reaching this point means the node
+   EXECUTES in the union's dataflow.  A base whose ARRAY block is bot (for a BO index/deref) or whose
+   POINTS-TO is bot (for an ND deref) means the base is a value the per-module residual could not
+   reconstruct (an undefined-library return / an unresolved cross-module global or struct field) -- the
+   genuine external-source under-approximation the whole-program oracle raises.  CRUCIALLY it is NOT
+   enough to test `v = bot`: a residual pointer can have a non-bot POINTS-TO yet a BOT ARRAY block (so
+   the BO "Array is Bot" is vacuously rewritten to a Proven "valid pointer dereference"), or a non-bot
+   interval yet a BOT points-to (so the ND deref is vacuously Proven) -- both are the SAME dropped alarm.
+   We floor per-check-component so the check runs against the saturating residual TOP (UnProven).  A base
+   with a CONCRETE array / points-to is left untouched (a genuine local proof is preserved).  Guarded by
+   the modular-only flag; a byte-for-byte no-op for the whole-program oracle (flag OFF).
+   [kind]: `BO tests the array block, `ND tests the points-to set. *)
+let extern_deref_floor kind _node _mem v =
+  if not !Options.modular_extern_deref_floor then v
+  else
+    let component_bot =
+      match kind with
+      | `BO -> ArrayBlk.eq (Val.array_of_val v) ArrayBlk.bot
+      (* ND: a points-to-bot deref base is a vacuous ND proof (check_nd rewrites "PowLoc is Bot" ->
+         Proven "valid pointer dereference").  Flooring EVERY such base to may-null is sound but very
+         costly (vacuous ND proofs are common), so restrict the ND floor to the base being ENTIRELY bot
+         (the genuine external-source case, where nothing at all was reconstructed) unless the caller
+         opts into the broader powloc-bot floor with UNION_ND_POWLOC_FLOOR=1.  The BO (array) floor has
+         no such cost (it only fires where the deref/index would otherwise vacuously prove) so it stays
+         component-aware. *)
+      | `ND ->
+        if Sys.getenv_opt "UNION_ND_POWLOC_FLOOR" <> None
+        then PowLoc.eq (Val.pow_loc_of_val v) PowLoc.bot
+        else Val.eq v Val.bot
+    in
+    if component_bot then Val.join v extern_deref_floor_val else v
+
+(* Floor a bot INDEX / SIZE operand (the [Some v2] of check_bo: an array index `arr[i]`, or the
+   length arg of a memcpy/memmove) to Itv.top.  When the base array is a CONCRETE global (e.g. wget's
+   `_sch_istable` char-class table) but the index `((int)*p)&0xff` traces to an externally-sourced
+   deref `*p` that the union lost to bot, the index value is bot -- and `check_bo` computes
+   `offset = Itv.plus base.offset bot = bot` (bot annihilates under Itv.plus), yielding a spurious
+   "Array is Bot"/BotAlarm that SUPPRESSES the oracle's real BO alarm.  Flooring the bot index/size to
+   Itv.top makes `offset = base.offset + TOP = TOP` -> UnProven, the sound direction (an unknown
+   external index can land anywhere).  Modular-only; a no-op for the oracle. *)
+let extern_index_floor v2opt =
+  match v2opt with
+  | Some v2 when !Options.modular_extern_deref_floor
+                 && Itv.is_bot (Val.itv_of_val v2) ->
+    Some (Val.of_itv Itv.top)
+  | _ -> v2opt
+
 let inspect_aexp_bo : InterCfg.node -> AlarmExp.t -> Mem.t -> query list -> query list
 =fun node aexp mem queries ->
   (match aexp with
     | ArrayExp (lv,e,loc) ->
         let v1 = Mem.lookup (ItvSem.eval_lv (InterCfg.Node.get_pid node) lv mem) mem in
+        let v1 = extern_deref_floor `BO node mem v1 in
         let v2 = ItvSem.eval (InterCfg.Node.get_pid node) e mem in
-        let lst = check_bo v1 (Some v2) in
+        let lst = check_bo v1 (extern_index_floor (Some v2)) in
         List.map (fun (status,a,desc) ->
           { node = node; exp = aexp; loc = loc; allocsite = a;
             status = status; desc = desc; src = None }) lst
     | DerefExp (e,loc) ->
         let v = ItvSem.eval (InterCfg.Node.get_pid node) e mem in
+        let v = extern_deref_floor `BO node mem v in
         let lst = check_bo v None in
           if Val.eq Val.bot v then
             List.map (fun (status,a,desc) ->
@@ -126,12 +187,13 @@ let inspect_aexp_bo : InterCfg.node -> AlarmExp.t -> Mem.t -> query list -> quer
     | Strncpy (e1, e2, e3, loc)
     | Memcpy (e1, e2, e3, loc)
     | Memmove (e1, e2, e3, loc) ->
-        let v1 = ItvSem.eval (InterCfg.Node.get_pid node) e1 mem in
-        let v2 = ItvSem.eval (InterCfg.Node.get_pid node) e2 mem in
+        let v1 = extern_deref_floor `BO node mem (ItvSem.eval (InterCfg.Node.get_pid node) e1 mem) in
+        let v2 = extern_deref_floor `BO node mem (ItvSem.eval (InterCfg.Node.get_pid node) e2 mem) in
         let e3_1 = Sparrow_cil.BinOp (Sparrow_cil.MinusA, e3, Sparrow_cil.mone, Sparrow_cil.intType) in
         let v3 = ItvSem.eval (InterCfg.Node.get_pid node) e3_1 mem in
-        let lst1 = check_bo v1 (Some v3) in
-        let lst2 = check_bo v2 (Some v3) in
+        let v3opt = extern_index_floor (Some v3) in
+        let lst1 = check_bo v1 v3opt in
+        let lst2 = check_bo v2 v3opt in
         List.map (fun (status,a,desc) ->
             { node = node; exp = aexp; loc = loc; allocsite = a;
               status = status; desc = desc; src = None }) (lst1@lst2)
@@ -142,6 +204,7 @@ let inspect_aexp_nd : InterCfg.node -> AlarmExp.t -> Mem.t -> query list -> quer
   (match aexp with
   | DerefExp (e,loc) ->
     let v = ItvSem.eval (InterCfg.Node.get_pid node) e mem in
+    let v = extern_deref_floor `ND node mem v in
     let lst = check_nd v in
       if Val.eq Val.bot v then
         List.map (fun (status,a,desc) ->

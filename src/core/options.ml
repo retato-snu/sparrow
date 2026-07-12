@@ -61,6 +61,14 @@ let unsound_lib = ref BatSet.empty
 let extract_loop_feat = ref false
 let extract_lib_feat = ref false
 let top_location = ref false
+(* MODULAR-ONLY (default OFF, so the whole-program oracle is byte-for-byte unchanged): when an alarm's
+   dereference/index base evaluates to bot at a REACHABLE node in the modular union, the base is a
+   GENUINELY-OPEN externally-sourced value (an undefined-library return, or an unresolved cross-module
+   global/struct field) that the per-module residual could not reconstruct.  Sound Boundary Fidelity
+   requires flooring it to the saturating external residual (TOP), never bot -- so the query becomes
+   UnProven (adds coverage only; a bot base can never become a FALSE proof, only an honest alarm).  The
+   modular union sets this ref (respecting UNION_NO_EXTERN_DEREF_FLOOR); the oracle never does. *)
+let modular_extern_deref_floor = ref false
 let unsound_recursion = ref false
 let unsound_alloc = ref false
 let bugfinder = ref 0
