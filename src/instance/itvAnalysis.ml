@@ -182,10 +182,36 @@ let inspect_aexp_bo : InterCfg.node -> AlarmExp.t -> Mem.t -> query list -> quer
               && Sys.getenv_opt "UNION_NO_DEREF_OFFSET_FLOOR" = None
               && not (ArrayBlk.eq arr ArrayBlk.bot)
               && not (Itv.is_bot (ArrayBlk.sizeof arr)) in
+            (* FIX (c) BO-VACUOUS-SIZE floor: a deref `*(base+idx)` whose base ARRAY BLOCK EXISTS but
+               whose SIZE is bot -- the residual of an externally-sourced LENGTH the union lost (make
+               `value = alloca(strlen(v->value)+..)` with `v->value` a cross-module heap field -> its
+               strlen bots -> the alloca size bots; wget append_url/header_process, an external length).
+               check_bo returns BotAlarm "Array is Bot"/"size bot" and the default rewrite vacuously
+               PROVES -- the SAME under-approximation as the concrete-size annihilation above, one size
+               level down.  The whole-program oracle sizes the alloca against the same allocsite (size
+               [2,+oo]) and raises UnProven, so the union's vacuous proof is a genuine BO under-approx.
+               Floor it to an honest UnProven with offset+size TOP (the sound residual of an unknown
+               external length).  DISTINCT from the annihilation gate: this ALSO fires when the SIZE is
+               bot, so it recovers the argcp/argvp-shaped cases the size-gate intentionally left Proven.
+               The comment above warns those are precision-costly (an unresolved `*p` output param the
+               oracle leaves Proven); this floor is therefore SEPARATELY gated (default ON, opt out with
+               UNION_NO_DEREF_SIZEBOT_FLOOR) and its precision cost is measured in the fit audit.  SOUND:
+               it only turns a vacuous BotAlarm proof into an honest UnProven, never a real proof into an
+               alarm and never an alarm into a proof. *)
+            let deref_size_bot =
+              !Options.modular_extern_deref_floor
+              && Sys.getenv_opt "UNION_NO_DEREF_OFFSET_FLOOR" = None
+              && Sys.getenv_opt "UNION_NO_DEREF_SIZEBOT_FLOOR" = None
+              && not (ArrayBlk.eq arr ArrayBlk.bot)
+              && Itv.is_bot (ArrayBlk.sizeof arr) in
             List.map (fun (status,a,desc) ->
               if status = BotAlarm && deref_offset_annihilated
               then { node = node; exp = aexp; loc = loc; status = UnProven; allocsite = a;
                      desc = string_of_alarminfo Itv.top (ArrayBlk.sizeof arr);
+                     src = None }
+              else if status = BotAlarm && deref_size_bot
+              then { node = node; exp = aexp; loc = loc; status = UnProven; allocsite = a;
+                     desc = string_of_alarminfo Itv.top Itv.top;
                      src = None }
               else if status = BotAlarm
               then { node = node; exp = aexp; loc = loc; status = Proven; allocsite = a;
