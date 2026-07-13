@@ -161,8 +161,33 @@ let inspect_aexp_bo : InterCfg.node -> AlarmExp.t -> Mem.t -> query list -> quer
               { node = node; exp = aexp; loc = loc; allocsite = a;
                 status = status; desc = desc; src = None }) lst
           else
+            (* [deref_offset_annihilated]: the base carries a NON-bot ARRAY block WITH A NON-bot SIZE, but
+               check_bo still yields BotAlarm because the OFFSET alone is bot.  A DerefExp `*(base+idx)`
+               folds the INDEX into the evaluated pointer, so there is no separate v2 for extern_index_floor
+               to lift; when the folded index traces to an externally-sourced value the union lost to bot (a
+               cross-module table `@functions+new_func`, new_func a bot cross-module counter), or a concrete
+               local/global array indexed by such a value, `Itv.plus offset bot = bot` (bot annihilates) ->
+               BotAlarm "offset: bot" while the SIZE stays concrete, and the default rewrite below vacuously
+               PROVES the deref -- the NO-QUERY BO under-approximation the whole-program oracle raises (which
+               it flags UnProven against the same concrete array).  So emit an honest UnProven with offset
+               TOP (the sound residual of an unknown external index) against the array's own size.
+               Restricting to a NON-bot SIZE is what keeps this from over-firing: a degenerate residual
+               pointer whose ARRAY exists but whose SIZE is also bot (e.g. an unresolved `*p` output param,
+               argcp/argvp/ifstat) is NOT a concrete-array index the oracle proves-vs -- the oracle leaves
+               those Proven -- so flooring them would be a spurious alarm; those keep the vacuous-Proven path.
+               Modular-only + size-gated, so the whole-program oracle is byte-for-byte unchanged. *)
+            let arr = Val.array_of_val v in
+            let deref_offset_annihilated =
+              !Options.modular_extern_deref_floor
+              && Sys.getenv_opt "UNION_NO_DEREF_OFFSET_FLOOR" = None
+              && not (ArrayBlk.eq arr ArrayBlk.bot)
+              && not (Itv.is_bot (ArrayBlk.sizeof arr)) in
             List.map (fun (status,a,desc) ->
-              if status = BotAlarm
+              if status = BotAlarm && deref_offset_annihilated
+              then { node = node; exp = aexp; loc = loc; status = UnProven; allocsite = a;
+                     desc = string_of_alarminfo Itv.top (ArrayBlk.sizeof arr);
+                     src = None }
+              else if status = BotAlarm
               then { node = node; exp = aexp; loc = loc; status = Proven; allocsite = a;
                      desc = "valid pointer dereference"; src = None }
               else { node = node; exp = aexp; loc = loc; status = status; allocsite = a;
