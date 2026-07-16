@@ -42,9 +42,21 @@ let parseOneFile : string -> C.file
   );
   cil
 
+(* Parse one TU and, under -static_rename, qualify its file-statics as
+   name@<module_key(path)> (A1 front-end normalization).  The rename runs
+   per TU BEFORE any merge so the whole-program (oracle-aligned) run and a
+   module-alone build assign the SAME names -- and mergecil then sees no
+   static collisions to rename on its own. *)
+let parse_one_normalized : string -> C.file
+= fun fname ->
+  let cil = parseOneFile fname in
+  if !Options.static_rename then StaticRename.rename_file ~path:fname cil
+  else cil
+
 let parse : unit -> C.file
 = fun () ->
-  match List.map parseOneFile !files with
+  if !Options.static_rename then StaticRename.assert_distinct_keys !files;
+  match List.map parse_one_normalized !files with
     [one] -> one
   | [] -> (prerr_endline "Error: No arguments are given"; exit 1)
   | files ->
@@ -62,7 +74,14 @@ let makeCFGinfo : Sparrow_cil.file -> Sparrow_cil.file
     Sparrow_cil.GFun(fd,_) ->
                   Sparrow_cil.prepareCFG fd ;
                   (* jc: blockinggraph depends on this "true" arg *)
-                  ignore (Sparrow_cil.computeCFGInfo fd true)
+                  (* -stable_node_ids (A1): number stmt sids per FUNCTION
+                     (computeCFGInfo resets sid_counter when the
+                     global-numbering arg is false), so a function's sids
+                     -- the raw material of its IntraCfg node ids -- depend
+                     on its own body only, not on its position in the
+                     file/merge.  Default (flag off) keeps the pinned
+                     global numbering. *)
+                  ignore (Sparrow_cil.computeCFGInfo fd (not !Options.stable_node_ids))
   | _ -> ());
   f
 

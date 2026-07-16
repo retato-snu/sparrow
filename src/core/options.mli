@@ -50,6 +50,12 @@ val bugfinder :  int ref
 val unsound_recursion : bool ref
 val unsound_alloc : bool ref
 
+(** {2 Front-end normalization (separate-compilation A1; all default off) } *)
+
+val stable_node_ids : bool ref
+val static_rename : bool ref
+val frontend_module : bool ref
+
 (** {2 Main Analysis } *)
 
 val narrow : bool ref

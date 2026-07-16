@@ -330,15 +330,26 @@ let init_module : Sparrow_cil.file -> t
 let reset_node_counter () =
   IntraCfg.Node.set_next_id (IntraCfg.Node.get_initial_id ())
 
-let gen_cfgs_stable_gproc gproc_of_file file =
+(* The IL optimization (optimize_array_init) synthesizes fresh nodes via the
+   SHARED node counter.  In the stable discipline it therefore must run
+   INSIDE each function's counter run (right after that function's build,
+   while the counter sits at the function's own high-water mark) -- running
+   it later over the finished map (as the default path does) would (a) make
+   the fresh ids depend on whichever function was built last, breaking
+   content-stability, and (b) risk COLLIDING with the function's own ids,
+   since after a per-function reset the counter is no longer a global
+   monotone. *)
+let build_stable build =
   reset_node_counter ();
-  let gproc = gproc_of_file file in
+  build () |> opt !Options.optil IntraCfg.optimize
+
+let gen_cfgs_stable_gproc gproc_of_file file =
+  let gproc = build_stable (fun () -> gproc_of_file file) in
   BatMap.add global_proc gproc
     (list_fold (fun g m ->
       match g with
       | Sparrow_cil.GFun (f,loc) ->
-        reset_node_counter ();
-        BatMap.add f.svar.vname (IntraCfg.init f loc) m
+        BatMap.add f.svar.vname (build_stable (fun () -> IntraCfg.init f loc)) m
       | _ -> m
     ) file.Sparrow_cil.globals BatMap.empty)
 
@@ -351,7 +362,6 @@ let init_stable : Sparrow_cil.file -> t
              (Sparrow_cil.emptyFunction global_proc))
         file;
     globals = file.Sparrow_cil.globals ; call_edges = BatMap.empty }
-  |> opt !Options.optil optimize_il
   |> compute_dom_and_scc
 
 let init_module_stable : Sparrow_cil.file -> t
@@ -363,6 +373,5 @@ let init_module_stable : Sparrow_cil.file -> t
              (Sparrow_cil.emptyFunction global_proc))
         file;
     globals = file.Sparrow_cil.globals ; call_edges = BatMap.empty }
-  |> opt !Options.optil optimize_il
   |> compute_dom_and_scc
 

@@ -39,6 +39,26 @@ let pack_manual = ref false
 (* Taint Analysis *)
 let taint = ref false
 
+(* Front-end normalization (separate-compilation A1). ALL DEFAULT OFF: with
+   both flags off the whole-program oracle pipeline is byte-for-byte
+   unchanged (acceptance-gated).
+   - stable_node_ids: number CIL stmt sids per FUNCTION (computeCFGInfo
+     global_numbering=false) and build IntraCfgs with the per-function node
+     counter reset (InterCfg.init_stable / init_module_stable), so a
+     function's node ids -- and thus its allocsite identities -- are a
+     function of its own body only (content-stable across module-alone and
+     merged builds).
+   - static_rename: qualify every file-static symbol (functions, globals,
+     CIL-hoisted local statics) as name@<module_key>, module_key derived
+     from the TU path, per TU BEFORE merging.  Makes pids/GVars globally
+     unique across TUs by construction.
+   - frontend_module: build the module (translation-unit) view of the
+     global proc (no main required, _G_ initializes globals and calls
+     nothing).  No CLI in the main analyzer (front-end dump tool only). *)
+let stable_node_ids = ref false
+let static_rename = ref false
+let frontend_module = ref false
+
 (* Analyzer *)
 let nobar = ref false
 let narrow = ref false
@@ -132,6 +152,9 @@ let opts =
   ("-dug_optimize", (Arg.Set_string dug_optimize), "Def-use graph bypass optimization: off | join | all");
   ("-sparse_iter_stats", (Arg.Int (fun x -> sparse_iter_stats := x)), "Print sparse iteration hot-node stats every N iterations (0 disables)");
   ("-sparse_seed", (Arg.Set_string sparse_seed), "Sparse initial worklist seed: all | sources");
+  ("-stable_node_ids", (Arg.Set stable_node_ids), "Content-stable per-function node/statement ids (front-end normalization; default off)");
+  ("-static_rename", (Arg.Set static_rename), "Qualify file-static symbols as name@<module_key(path)> per translation unit (front-end normalization; default off)");
+  ("-oracle_align", (Arg.Unit (fun () -> stable_node_ids := true; static_rename := true)), "Oracle-aligned mode: apply the same front-end normalization (-stable_node_ids -static_rename) to this whole-program run, so results are node-key comparable with separately-compiled modules");
   ("-narrow", (Arg.Set narrow), "Do narrowing");
   ("-worklist_order", (Arg.Set_string worklist_order), "Worklist order strategy: wto (default) | file (prioritize intra-file iteration)");
   ("-preanalysis_order", (Arg.Set_string preanalysis_order), "Flow-insensitive pre-analysis iteration: default (global sweep+widen) | file (same, nodes grouped by file) | module (stabilize each file to a local fixpoint before the next)");

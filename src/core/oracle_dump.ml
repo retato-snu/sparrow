@@ -26,7 +26,8 @@ let reject_non_oracle_options () =
       | "--stage" | "--out" | "--worklist_order" | "--preanalysis_order" ->
         if i + 1 >= argc then fail_usage ("missing value for " ^ argv.(i))
         else loop (i + 2)
-      | "--harness" -> loop (i + 1)
+      | "--harness" | "--module" | "--stable_node_ids" | "--static_rename"
+      | "--oracle_align" -> loop (i + 1)
       | arg when starts_with_dash arg ->
         fail_usage ("unsupported v1 oracle option: " ^ arg)
       | _ -> loop (i + 1)
@@ -44,11 +45,16 @@ let main () =
   let stage = ref None in
   let out = ref None in
   let harness = ref false in
-  let usage = "Usage: sparrow-oracle-dump --stage front_end|pre|sparse --out oracle.json [--harness] source-files" in
+  let module_view = ref false in
+  let usage = "Usage: sparrow-oracle-dump --stage front_end|pre|sparse --out oracle.json [--harness] [--module] [--stable_node_ids] [--static_rename] [--oracle_align] source-files" in
   let specs = [
     ("--stage", Arg.String (fun s -> stage := Some (parse_stage s)), "Oracle stage");
     ("--out", Arg.String (fun s -> out := Some s), "Output oracle JSON path");
     ("--harness", Arg.Set harness, "Synthesize a main calling all defined functions (for main-less library TUs)");
+    ("--module", Arg.Set module_view, "Module (translation-unit) front-end view: no-main _G_ that initializes globals and calls nothing (front_end stage only)");
+    ("--stable_node_ids", Arg.Set Options.stable_node_ids, "Content-stable per-function node/statement ids (A1 front-end normalization)");
+    ("--static_rename", Arg.Set Options.static_rename, "Qualify file-static symbols as name@<module_key(path)> per TU (A1 front-end normalization)");
+    ("--oracle_align", Arg.Unit (fun () -> Options.stable_node_ids := true; Options.static_rename := true), "Oracle-aligned mode: both A1 normalizations, for node-key comparability");
     ("--worklist_order", Arg.Set_string Options.worklist_order, "Worklist order strategy: wto (default) | file");
     ("--preanalysis_order", Arg.Set_string Options.preanalysis_order, "Pre-analysis node traversal: default | file");
   ] in
@@ -68,6 +74,10 @@ let main () =
     | Some out -> out
     | None -> fail_usage "missing --out"
   in
+  (if !module_view then
+     match stage with
+     | SparrowOracleDump.FrontEnd -> Options.frontend_module := true
+     | _ -> fail_usage "--module is a front_end-stage view only");
   Sparrow_cil.initCIL ();
   let global =
     match stage with
