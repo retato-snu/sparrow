@@ -46,6 +46,24 @@ end
 module Allocsite =
 struct
   type t = Internal of IntAllocsite.t | External of ExtAllocsite.t [@@deriving compare]
+  type view =
+    | Node_allocsite of Node.t
+    | String_allocsite of Node.t
+    | External_input
+    | External_unknown of string
+
+  let view = function
+    | Internal (node, false) -> Node_allocsite node
+    | Internal (node, true) -> String_allocsite node
+    | External ExtAllocsite.Input -> External_input
+    | External (ExtAllocsite.Unknown name) -> External_unknown name
+
+  let of_view = function
+    | Node_allocsite node -> Internal (node, false)
+    | String_allocsite node -> Internal (node, true)
+    | External_input -> External ExtAllocsite.Input
+    | External_unknown name -> External (ExtAllocsite.Unknown name)
+
   let allocsite_of_node : Node.t -> t
   = fun n -> Internal (n,false)
   let allocsite_of_string : Node.t -> t

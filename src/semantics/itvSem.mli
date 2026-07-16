@@ -16,6 +16,12 @@ val with_transfer_hook :
    (Dom.t * Global.t) option) ->
   (unit -> 'a) -> 'a
 
+(** [(active, generation)] for the dynamically scoped transfer override.
+    [generation] changes on both installation and restoration, allowing a
+    staged transfer authorization to reject an intervening override even
+    after its scope has ended. *)
+val transfer_hook_status : unit -> bool * int
+
 val eval_lv : ?spec:Spec.t -> BasicDom.Proc.t -> Sparrow_cil.lval -> ItvDom.Mem.t -> BasicDom.PowLoc.t
 val eval : ?spec:Spec.t -> BasicDom.Proc.t -> Sparrow_cil.exp -> ItvDom.Mem.t -> ItvDom.Val.t
 val eval_array_alloc : ?spec:Spec.t -> BasicDom.Node.t -> Sparrow_cil.exp -> bool -> Dom.t -> ItvDom.Val.t

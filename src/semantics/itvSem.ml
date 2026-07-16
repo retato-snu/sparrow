@@ -49,16 +49,32 @@ let update : update_mode -> Spec.t -> Global.t -> PowLoc.t -> Val.t -> Mem.t -> 
   else Mem.weak_update locs v mem
 
 let transfer_hook = ref (fun _ _ _ _ _ -> None)
+let transfer_hook_depth = ref 0
+let transfer_hook_generation_count = ref 0
+
+(* A staged consumer must not specialize the ordinary command dispatch while
+   [with_transfer_hook] has replaced it.  The generation also detects a hook
+   which was installed and removed between plan extraction and the one-shot
+   generation scope. *)
+let transfer_hook_status () =
+  (!transfer_hook_depth > 0, !transfer_hook_generation_count)
 
 let with_transfer_hook hook f =
   let previous = !transfer_hook in
   transfer_hook := hook;
+  incr transfer_hook_depth;
+  incr transfer_hook_generation_count;
+  let restore () =
+    transfer_hook := previous;
+    decr transfer_hook_depth;
+    incr transfer_hook_generation_count
+  in
   try
     let result = f () in
-    transfer_hook := previous;
+    restore ();
     result
   with exn ->
-    transfer_hook := previous;
+    restore ();
     raise exn
 
 (* ********************************** *

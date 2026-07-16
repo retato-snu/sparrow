@@ -18,6 +18,16 @@ module PowProc : PowDom.CPO with type t = PowDom.MakeCPO(Proc).t and type elt = 
 
 module Allocsite : sig
   include AbsDom.SET
+  (** Lossless, persistence-safe view.  Unlike [to_string], this distinguishes
+      command allocations from string allocations and external input from an
+      explicitly named external allocation (including the empty name). *)
+  type view =
+    | Node_allocsite of Node.t
+    | String_allocsite of Node.t
+    | External_input
+    | External_unknown of string
+  val view : t -> view
+  val of_view : view -> t
   val allocsite_of_node : Node.t -> t
   val allocsite_of_string : Node.t -> t
   val is_string_allocsite : t -> bool
