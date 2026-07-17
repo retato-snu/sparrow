@@ -22,4 +22,17 @@ val fixpt :
   InterCfg.Node.t list -> int -> ItvDom.Mem.t * Global.t ->
   ItvDom.Mem.t * Global.t
 
+(** The deterministic post-fixpoint tail of [perform]: given a claimed pre
+    memory, draw the call edges / callgraph it induces.  Exported for the
+    O4 certifier (A6), which re-derives the link's structure FROM the
+    persisted premem (never re-running the fixpoint) and compares it
+    against the link's persisted call edges/callgraph -- the independent
+    call-edge-closure detector of the architecture synthesis section 1.6.
+    Mli-only export; behavior unchanged. *)
+val draw_call_edges :
+  InterCfg.Node.t list -> ItvDom.Mem.t -> Global.t -> Global.t
+
+val draw_callgraph :
+  InterCfg.Node.t list -> ItvDom.Mem.t -> Global.t -> Global.t
+
 val perform : Global.t -> Global.t
