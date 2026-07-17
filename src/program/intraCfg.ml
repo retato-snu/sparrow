@@ -44,6 +44,15 @@ module Node = struct
 
   let make () = nid := !nid + 1; Node !nid
 
+  (* A4 link seam: construct a node with an EXPLICIT id, without touching
+     the shared counter.  The link-synthesized _G_ assigns symbol-keyed
+     ids to the deduplicated per-module init slices; those ids are chosen
+     by the linker, not drawn from this module's build counter.  Negative
+     ids are reserved (ENTRY/EXIT render as -1 through [id]). *)
+  let of_id i =
+    if i < 0 then invalid_arg "IntraCfg.Node.of_id: negative id"
+    else Node i
+
   let id n =
     match n with
     | ENTRY

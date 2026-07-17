@@ -17,6 +17,11 @@ module Node : sig
   val get_initial_id : unit -> int
   val get_next_id : unit -> int
   val set_next_id : int -> unit
+
+  (** A4 link seam: a node with an explicit non-negative id, counter
+      untouched (the linker's symbol-keyed [_G_] ids are chosen, not
+      drawn).  Raises [Invalid_argument] on a negative id. *)
+  val of_id : int -> t
 end
 
 module NodeSet : BatSet.S with type elt = Node.t
@@ -57,6 +62,11 @@ val init : Sparrow_cil.fundec -> Sparrow_cil.location -> t
 val generate_module_global_proc :
   Sparrow_cil.global list -> Sparrow_cil.fundec -> t
 val generate_global_proc : Sparrow_cil.global list -> Sparrow_cil.fundec -> t
+
+(** A4 link seam (mli-only export): a CFG with no nodes and no edges over
+    the given fundec.  The linker builds the link [_G_] by adding the
+    deduplicated module init-slice nodes/edges into this. *)
+val empty : Sparrow_cil.fundec -> t
 
 (** A3 seam (module _G_ only): per-symbol init-slice recording of the LAST
     [generate_module_global_proc] run.  Entries are (symbol, tag, lo, hi)

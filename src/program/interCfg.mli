@@ -44,6 +44,13 @@ val init_module : Sparrow_cil.file -> t
 val init_stable : Sparrow_cil.file -> t
 val init_module_stable : Sparrow_cil.file -> t
 
+(** A4 link seam: assemble an InterCfg directly from already-built
+    per-procedure CFGs (module objects' functions + the link-synthesized
+    [_G_]).  [call_edges] start empty -- call resolution is the link
+    pre-analysis's product.  Dominators/SCCs are not recomputed (the
+    shipped per-function structures carry them). *)
+val of_cfgs : (pid * IntraCfg.t) list -> Sparrow_cil.global list -> t
+
 val cfgof : t -> pid -> IntraCfg.t
 val argsof : t -> pid -> Sparrow_cil.varinfo list
 val cmdof : t -> Node.t -> IntraCfg.cmd

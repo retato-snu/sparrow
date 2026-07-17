@@ -375,3 +375,16 @@ let init_module_stable : Sparrow_cil.file -> t
     globals = file.Sparrow_cil.globals ; call_edges = BatMap.empty }
   |> compute_dom_and_scc
 
+(* A4 link seam: assemble an InterCfg directly from already-built
+   per-procedure CFGs (the module objects' function CFGs plus the
+   link-synthesized _G_).  call_edges start EMPTY -- call resolution is
+   the link pre-analysis's product, never an input.  No dominator/SCC
+   recomputation here: the shipped per-function structures already carry
+   them; the caller computes them for any cfg it synthesized itself. *)
+let of_cfgs : (pid * IntraCfg.t) list -> Sparrow_cil.global list -> t
+= fun cfgs globals ->
+  { cfgs =
+      List.fold_left (fun m (pid, cfg) -> BatMap.add pid cfg m)
+        BatMap.empty cfgs;
+    globals; call_edges = BatMap.empty }
+
