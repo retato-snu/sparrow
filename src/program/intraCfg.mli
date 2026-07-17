@@ -58,6 +58,18 @@ val generate_module_global_proc :
   Sparrow_cil.global list -> Sparrow_cil.fundec -> t
 val generate_global_proc : Sparrow_cil.global list -> Sparrow_cil.fundec -> t
 
+(** A3 seam (module _G_ only): per-symbol init-slice recording of the LAST
+    [generate_module_global_proc] run.  Entries are (symbol, tag, lo, hi)
+    in TU fold order; the node ids created for the symbol are exactly
+    [{ id | lo < id <= hi }].  Tags: "def-init" | "tentative" |
+    "decl-init" | "falloc".  [module_gproc_postfold_mark] is the node
+    counter after the fold: ids above it were created by the post-fold
+    pipeline (string-literal salloc chains, IL array-init merging) and are
+    attributed by the consumer.  Bookkeeping only; the whole-program path
+    never writes these. *)
+val module_gproc_slices : (string * string * int * int) list ref
+val module_gproc_postfold_mark : int ref
+
 val get_pid : t -> string
 val get_fd : t -> Sparrow_cil.fundec
 val copy_with_pid : string -> t -> t

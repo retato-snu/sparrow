@@ -906,18 +906,52 @@ let generate_global_proc : Sparrow_cil.global list -> Sparrow_cil.fundec -> t
   |> add_edge call_node Node.EXIT
   |> finish
 
+(* --- A3 seam: per-symbol _G_ init-slice recording (module variant) ---
+   While [generate_module_global_proc] folds the TU's file-scope globals
+   into the module _G_, record for each processed global the node-id
+   WINDOW its processing created: (symbol, tag, lo, hi), the created ids
+   being exactly { id | lo < id <= hi } ([Node.make] increments then
+   returns).  Tags: "def-init" (GVar with initializer), "tentative"
+   (GVar without), "decl-init" (GVarDecl), "falloc" (GFun).  After the
+   fold, [module_gproc_postfold_mark] holds the counter high-water mark:
+   nodes created by the later pipeline (string-literal salloc chains,
+   IL array-init merging) carry ids above it and are attributed by the
+   consumer (the modular compile driver) from their command shape.
+   Pure bookkeeping -- the built graph is byte-identical to before, and
+   the whole-program [generate_global_proc] records nothing. *)
+let module_gproc_slices : (string * string * int * int) list ref = ref []
+let module_gproc_postfold_mark : int ref = ref 0
+
 let generate_module_global_proc : Sparrow_cil.global list -> Sparrow_cil.fundec -> t
 = fun globals fd ->
+  module_gproc_slices := [];
+  let record name tag lo result =
+    module_gproc_slices :=
+      (name, tag, lo, Node.get_next_id ()) :: !module_gproc_slices;
+    result
+  in
   let entry = Node.ENTRY in
   let (term, g) =
     List.fold_left (fun (node, g) x ->
+        let lo = Node.get_next_id () in
         match x with
           Sparrow_cil.GVar (var, init, loc) ->
-          process_gvar fd (Sparrow_cil.var var) init loc node g
-        | Sparrow_cil.GVarDecl (var, loc) -> process_gvardecl fd (Sparrow_cil.var var) loc node g
-        | Sparrow_cil.GFun (fundec, loc) -> process_fundecl fd fundec loc node g
+          record var.vname
+            (match init.Sparrow_cil.init with
+             | Some _ -> "def-init"
+             | None -> "tentative")
+            lo
+            (process_gvar fd (Sparrow_cil.var var) init loc node g)
+        | Sparrow_cil.GVarDecl (var, loc) ->
+          record var.vname "decl-init" lo
+            (process_gvardecl fd (Sparrow_cil.var var) loc node g)
+        | Sparrow_cil.GFun (fundec, loc) ->
+          record fundec.svar.vname "falloc" lo
+            (process_fundecl fd fundec loc node g)
         | _ -> (node, g)) (entry, empty fd) globals
   in
+  module_gproc_postfold_mark := Node.get_next_id ();
+  module_gproc_slices := List.rev !module_gproc_slices;
   g
   |> add_edge term Node.EXIT
   |> generate_assumes
