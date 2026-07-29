@@ -76,6 +76,26 @@ type global_provenance_row = {
   global_provenance_outcome : global_provenance_outcome;
 }
 
+(** A constructive identity witness for one allocation site in a completed
+    per-procedure CFG.  The key is source location plus the syntactic role of
+    the allocation command; [allocation_provenance_site_id] is exactly the
+    internal allocation-site identifier consumed by the abstract domains. *)
+type allocation_site_provenance_row = {
+  allocation_provenance_procedure : string;
+  allocation_provenance_location : Sparrow_cil.location;
+  allocation_provenance_role : string;
+  allocation_provenance_site_id : string;
+  allocation_provenance_node : Node.t;
+  allocation_provenance_is_string : bool;
+}
+
+(** Out-of-band observation switch used only by independence gates. *)
+val allocation_site_provenance_recording : bool ref
+
+(** Read the allocation-site table from a completed CFG.  This function only
+    inspects existing commands; it never owns or mutates graph state. *)
+val allocation_site_provenance_rows : t -> allocation_site_provenance_row list
+
 (** Out-of-band observation switch used only by the independence gate. *)
 val global_provenance_recording : bool ref
 

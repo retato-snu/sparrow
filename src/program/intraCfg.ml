@@ -203,6 +203,32 @@ type pending_global_provenance_row = {
   pending_location : Sparrow_cil.location;
 }
 
+type allocation_site_provenance_row = {
+  allocation_provenance_procedure : string;
+  allocation_provenance_location : Sparrow_cil.location;
+  allocation_provenance_role : string;
+  allocation_provenance_site_id : string;
+  allocation_provenance_node : Node.t;
+  allocation_provenance_is_string : bool;
+}
+
+let allocation_site_provenance_recording = ref true
+
+let allocation_role = function
+  | Cmd.Calloc (_, Cmd.Array _, static, _) ->
+    Some ("array:" ^ string_of_bool static, false)
+  | Cmd.Calloc (_, Cmd.Struct structure, static, _) ->
+    Some
+      ("struct:" ^ string_of_bool static ^ ":"
+       ^ structure.Sparrow_cil.cname, false)
+  | Cmd.Csalloc _ -> Some ("string", true)
+  | Cmd.Cfalloc (_, function_, _) ->
+    Some
+      ("function:" ^ function_.Sparrow_cil.svar.Sparrow_cil.vname, false)
+  | Cmd.Cinstr _ | Cmd.Cif _ | Cmd.CLoop _ | Cmd.Cset _ | Cmd.Cexternal _
+  | Cmd.Cassume _ | Cmd.Ccall _ | Cmd.Creturn _ | Cmd.Casm _ | Cmd.Cskip ->
+    None
+
 let global_provenance_recording = ref true
 let global_provenance_tracking_ready = ref false
 let global_provenance_observing_current_cfg = ref false
@@ -363,6 +389,47 @@ let succ : node -> t -> node list
 
 let fold_node f g a = G.fold_vertex f g.graph a
 let fold_edges f g a = G.fold_edges f g.graph a
+
+let allocation_site_provenance_rows cfg =
+  if not !allocation_site_provenance_recording then []
+  else
+    fold_node
+      (fun node rows ->
+         let command = find_cmd node cfg in
+         match allocation_role command with
+         | None -> rows
+         | Some (allocation_provenance_role,
+                 allocation_provenance_is_string) ->
+           { allocation_provenance_procedure = get_pid cfg;
+             allocation_provenance_location = Cmd.location_of command;
+             allocation_provenance_role;
+             allocation_provenance_site_id = Node.to_string node;
+             allocation_provenance_node = node;
+             allocation_provenance_is_string }
+           :: rows)
+      cfg []
+    |> List.sort (fun left right ->
+           let left_location = left.allocation_provenance_location in
+           let right_location = right.allocation_provenance_location in
+           let compared =
+             String.compare left_location.Sparrow_cil.file
+               right_location.Sparrow_cil.file
+           in
+           if compared <> 0 then compared
+           else
+             let compared =
+               Int.compare left_location.Sparrow_cil.line
+                 right_location.Sparrow_cil.line
+             in
+             if compared <> 0 then compared
+             else
+               let compared =
+                 String.compare left.allocation_provenance_role
+                   right.allocation_provenance_role
+               in
+               if compared <> 0 then compared
+               else Node.compare left.allocation_provenance_node
+                      right.allocation_provenance_node)
 
 let is_entry : node -> bool
 =fun node ->
