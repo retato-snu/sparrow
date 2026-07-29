@@ -166,6 +166,106 @@ type t = {
 and dom_fronts = (Node.t, NodeSet.t) BatMap.t
 and dom_tree = G.t
 
+(* Out-of-band provenance for the synthetic [_G_] chain.  The observer owns
+   no CIL or CFG fields: it follows node replacement/removal in a side table
+   and therefore cannot affect graph construction or optimizer decisions. *)
+type global_provenance_item_kind =
+  | Global_variable_declaration
+  | Global_variable_definition
+  | Global_function_definition
+
+type global_provenance_outcome =
+  | Global_chain_nodes of Node.t list
+  | Global_cfg_dropped
+
+type global_provenance_row = {
+  global_provenance_global_index : int;
+  global_provenance_chain_index : int;
+  global_provenance_item_index : int;
+  global_provenance_initializer_index : int option;
+  global_provenance_name : string;
+  global_provenance_kind : global_provenance_item_kind;
+  global_provenance_location : Sparrow_cil.location;
+  global_provenance_pretrim_nodes : Node.t list;
+  global_provenance_dropped_nodes : Node.t list;
+  global_provenance_drop_mechanisms : string list;
+  global_provenance_outcome : global_provenance_outcome;
+}
+
+type pending_global_provenance_row = {
+  pending_owner : int;
+  pending_global_index : int;
+  pending_chain_index : int;
+  pending_item_index : int;
+  pending_initializer_index : int option;
+  pending_name : string;
+  pending_kind : global_provenance_item_kind;
+  pending_location : Sparrow_cil.location;
+}
+
+let global_provenance_recording = ref true
+let global_provenance_tracking_ready = ref false
+let global_provenance_observing_current_cfg = ref false
+let pending_global_provenance_rows : pending_global_provenance_row list ref =
+  ref []
+let completed_global_provenance_rows : global_provenance_row list ref = ref []
+let global_provenance_node_owners : (Node.t, int list) Hashtbl.t =
+  Hashtbl.create 1024
+let global_provenance_decision_drops :
+    (int, (Node.t * string) list) Hashtbl.t =
+  Hashtbl.create 128
+
+let global_provenance_rows () = !completed_global_provenance_rows
+
+let global_provenance_owners node =
+  Option.value (Hashtbl.find_opt global_provenance_node_owners node) ~default:[]
+
+let global_provenance_assign owners nodes =
+  if !global_provenance_recording && !global_provenance_tracking_ready
+     && !global_provenance_observing_current_cfg
+  then
+    NodeSet.iter
+      (fun node ->
+         let old = global_provenance_owners node in
+         Hashtbl.replace global_provenance_node_owners node
+           (List.sort_uniq Int.compare (owners @ old)))
+      nodes
+
+let global_provenance_remove nodes =
+  if !global_provenance_recording && !global_provenance_tracking_ready
+     && !global_provenance_observing_current_cfg
+  then
+    NodeSet.iter (Hashtbl.remove global_provenance_node_owners) nodes
+
+let global_provenance_replace removed added =
+  if !global_provenance_recording && !global_provenance_tracking_ready
+     && !global_provenance_observing_current_cfg
+  then begin
+    let owners =
+      NodeSet.fold
+        (fun node owners -> global_provenance_owners node @ owners)
+        removed []
+      |> List.sort_uniq Int.compare
+    in
+    global_provenance_remove removed;
+    global_provenance_assign owners added
+  end
+
+let global_provenance_record_drop owners node mechanism =
+  if !global_provenance_recording && !global_provenance_tracking_ready
+     && !global_provenance_observing_current_cfg
+  then
+    List.iter
+      (fun owner ->
+         let old =
+           Option.value
+             (Hashtbl.find_opt global_provenance_decision_drops owner)
+             ~default:[]
+         in
+         Hashtbl.replace global_provenance_decision_drops owner
+           ((node, mechanism) :: old))
+      owners
+
 
 let empty : Sparrow_cil.fundec -> t
 =fun fd -> {
@@ -370,6 +470,7 @@ let remove_empty_nodes : t -> t
     then
       let p = List.nth (pred n g) 0 in
       let s = List.nth (succ n g) 0 in
+        global_provenance_remove (NodeSet.singleton n);
         g |> remove_node n |> add_edge p s
     else g
   ) g g
@@ -540,11 +641,22 @@ let rec generate_allocs : Sparrow_cil.fundec -> Sparrow_cil.varinfo list -> node
 
 let replace_node_graph : node -> node -> node -> t -> t
 = fun old entry exit g ->
+  let rec replacement_nodes seen = function
+    | [] -> seen
+    | node :: work when NodeSet.mem node seen ->
+      replacement_nodes seen work
+    | node :: work ->
+      let seen = NodeSet.add node seen in
+      if Node.equal node exit then replacement_nodes seen work
+      else replacement_nodes seen (succ node g @ work)
+  in
+  let replacement = replacement_nodes NodeSet.empty [entry] in
   let preds = pred old g in
   let succs = succ old g in
   let g = remove_node old g in
   let g = List.fold_left (fun g p -> add_edge p entry g) g preds in
   let g = List.fold_left (fun g s -> add_edge exit s g) g succs in
+  global_provenance_replace (NodeSet.singleton old) replacement;
   g
 
 (* string allocation  *)
@@ -872,18 +984,95 @@ let init : Sparrow_cil.fundec -> Sparrow_cil.location -> t
   |> insert_return_nodes
   |> insert_return_before_exit
 
+let generate_global_chain globals fd =
+  pending_global_provenance_rows := [];
+  completed_global_provenance_rows := [];
+  Hashtbl.clear global_provenance_node_owners;
+  Hashtbl.clear global_provenance_decision_drops;
+  global_provenance_tracking_ready := !global_provenance_recording;
+  global_provenance_observing_current_cfg := !global_provenance_recording;
+  let global_index = ref (-1) in
+  let chain_index = ref (-1) in
+  let initializer_index = ref (-1) in
+  let provenance_owner = ref (-1) in
+  let item_metadata global =
+    incr global_index;
+    match global with
+    | Sparrow_cil.GVarDecl (variable, location) ->
+      incr chain_index;
+      Some
+        (!chain_index, None, variable.vname, Global_variable_declaration,
+         location)
+    | Sparrow_cil.GVar (variable, initinfo, location) ->
+      incr chain_index;
+      let initializer_slot =
+        match initinfo.init with
+        | None -> None
+        | Some _ ->
+          incr initializer_index;
+          Some !initializer_index
+      in
+      Some
+        (!chain_index, initializer_slot, variable.vname,
+         Global_variable_definition, location)
+    | Sparrow_cil.GFun (function_, location) ->
+      incr chain_index;
+      Some
+        (!chain_index, None, function_.svar.vname,
+         Global_function_definition, location)
+    | Sparrow_cil.GType _ | Sparrow_cil.GCompTag _
+    | Sparrow_cil.GCompTagDecl _ | Sparrow_cil.GEnumTag _
+    | Sparrow_cil.GEnumTagDecl _ | Sparrow_cil.GAsm _
+    | Sparrow_cil.GPragma _ | Sparrow_cil.GText _ -> None
+  in
+  let entry = Node.ENTRY in
+  List.fold_left
+    (fun (node, g) global ->
+       let metadata = item_metadata global in
+       let before = NodeSet.of_list (nodesof g) in
+       let term, g =
+         match global with
+         | Sparrow_cil.GVar (variable, initinfo, location) ->
+           process_gvar fd (Sparrow_cil.var variable) initinfo location
+             node g
+         | Sparrow_cil.GVarDecl (variable, location) ->
+           process_gvardecl fd (Sparrow_cil.var variable) location node g
+         | Sparrow_cil.GFun (function_, location) ->
+           process_fundecl fd function_ location node g
+         | Sparrow_cil.GType _ | Sparrow_cil.GCompTag _
+         | Sparrow_cil.GCompTagDecl _ | Sparrow_cil.GEnumTag _
+         | Sparrow_cil.GEnumTagDecl _ | Sparrow_cil.GAsm _
+         | Sparrow_cil.GPragma _ | Sparrow_cil.GText _ -> node, g
+       in
+       let generated = NodeSet.diff (NodeSet.of_list (nodesof g)) before in
+       (match metadata with
+        | Some (chain, initializer_slot, name, kind, location)
+          when !global_provenance_recording
+               && not (NodeSet.is_empty generated) ->
+          generated
+          |> NodeSet.elements
+          |> List.iteri (fun item_index generated_node ->
+                 incr provenance_owner;
+                 let owner = !provenance_owner in
+                 pending_global_provenance_rows :=
+                   { pending_owner = owner;
+                     pending_global_index = !global_index;
+                     pending_chain_index = chain;
+                     pending_item_index = item_index;
+                     pending_initializer_index = initializer_slot;
+                     pending_name = name;
+                     pending_kind = kind;
+                     pending_location = location }
+                   :: !pending_global_provenance_rows;
+                 global_provenance_assign [owner]
+                   (NodeSet.singleton generated_node))
+        | Some _ | None -> ());
+       term, g)
+    (entry, empty fd) globals
+
 let generate_global_proc : Sparrow_cil.global list -> Sparrow_cil.fundec -> t
 = fun globals fd ->
-  let entry = Node.ENTRY in
-  let (term, g) =
-    List.fold_left (fun (node, g) x ->
-        match x with
-          Sparrow_cil.GVar (var, init, loc) ->
-          process_gvar fd (Sparrow_cil.var var) init loc node g
-        | Sparrow_cil.GVarDecl (var, loc) -> process_gvardecl fd (Sparrow_cil.var var) loc node g
-        | Sparrow_cil.GFun (fundec, loc) -> process_fundecl fd fundec loc node g
-        | _ -> (node, g)) (entry, empty fd) globals
-  in
+  let term, g = generate_global_chain globals fd in
   let finish g =
     g
     |> generate_assumes
@@ -900,32 +1089,31 @@ let generate_global_proc : Sparrow_cil.global list -> Sparrow_cil.fundec -> t
   in
   let call_node = Node.make () in
   let call_cmd = Cmd.Ccall (None, Lval (Var main_dec.svar, NoOffset), [], main_loc) in
-  g
-  |> add_cmd call_node call_cmd
-  |> add_edge term call_node
-  |> add_edge call_node Node.EXIT
-  |> finish
+  let result =
+    g
+    |> add_cmd call_node call_cmd
+    |> add_edge term call_node
+    |> add_edge call_node Node.EXIT
+    |> finish
+  in
+  global_provenance_observing_current_cfg := false;
+  result
 
 let generate_module_global_proc : Sparrow_cil.global list -> Sparrow_cil.fundec -> t
 = fun globals fd ->
-  let entry = Node.ENTRY in
-  let (term, g) =
-    List.fold_left (fun (node, g) x ->
-        match x with
-          Sparrow_cil.GVar (var, init, loc) ->
-          process_gvar fd (Sparrow_cil.var var) init loc node g
-        | Sparrow_cil.GVarDecl (var, loc) -> process_gvardecl fd (Sparrow_cil.var var) loc node g
-        | Sparrow_cil.GFun (fundec, loc) -> process_fundecl fd fundec loc node g
-        | _ -> (node, g)) (entry, empty fd) globals
+  let term, g = generate_global_chain globals fd in
+  let result =
+    g
+    |> add_edge term Node.EXIT
+    |> generate_assumes
+    |> flatten_instructions
+    |> remove_if_loop
+    |> transform_string_allocs fd
+    |> remove_empty_nodes
+    |> insert_return_nodes
   in
-  g
-  |> add_edge term Node.EXIT
-  |> generate_assumes
-  |> flatten_instructions
-  |> remove_if_loop
-  |> transform_string_allocs fd
-  |> remove_empty_nodes
-  |> insert_return_nodes
+  global_provenance_observing_current_cfg := false;
+  result
 
 let unreachable_node : t -> NodeSet.t
 =fun g ->
@@ -942,8 +1130,35 @@ let unreachable_node : t -> NodeSet.t
   remove_reachable_node' (NodeSet.singleton Node.ENTRY) all_nodes
 
 let merge_vertex g vl =
-  { g with graph = Merge.merge_vertex g.graph vl }
-  |> remove_edge (List.hd vl) (List.hd vl)
+  let replacement = List.hd vl in
+  let replacement_existed =
+    NodeSet.mem replacement (NodeSet.of_list (nodesof g))
+  in
+  let overwritten_owners = global_provenance_owners replacement in
+  let source_owners =
+    List.tl vl
+    |> List.concat_map global_provenance_owners
+    |> List.sort_uniq Int.compare
+  in
+  let lost_owners =
+    if replacement_existed then
+      List.filter (fun owner -> not (List.mem owner source_owners))
+        overwritten_owners
+    else []
+  in
+  let result =
+    { g with graph = Merge.merge_vertex g.graph vl }
+    |> remove_edge replacement replacement
+  in
+  if !global_provenance_recording && !global_provenance_tracking_ready
+     && !global_provenance_observing_current_cfg
+  then begin
+    global_provenance_remove (NodeSet.of_list vl);
+    global_provenance_assign source_owners (NodeSet.singleton replacement);
+    global_provenance_record_drop lost_owners replacement
+      "node-id-collision-overwrite"
+  end;
+  result
 
 let rec collect g n lval node_list exp_list =
   match succ n g with
@@ -1008,7 +1223,97 @@ let optimize_array_init : t -> t
       | _ -> g) g g
 
 let optimize : t -> t
-= fun g -> optimize_array_init g
+= fun g ->
+  if get_pid g = "_G_" && !global_provenance_tracking_ready then begin
+    global_provenance_observing_current_cfg := true;
+    Fun.protect
+      ~finally:(fun () -> global_provenance_observing_current_cfg := false)
+      (fun () -> optimize_array_init g)
+  end else optimize_array_init g
+
+let finish_global_provenance ~unreachable g =
+  if not !global_provenance_recording then begin
+    completed_global_provenance_rows := [];
+    global_provenance_tracking_ready := false
+  end else begin
+    let graph_nodes = NodeSet.of_list (nodesof g) in
+    let reachable_order =
+      let rec visit seen order = function
+        | [] -> List.rev order
+        | node :: rest when NodeSet.mem node seen -> visit seen order rest
+        | node :: rest ->
+          let seen = NodeSet.add node seen in
+          let successors = succ node g |> List.sort Node.compare in
+          visit seen (node :: order) (successors @ rest)
+      in
+      visit NodeSet.empty [] [Node.ENTRY]
+    in
+    let rank = Hashtbl.create (max 17 (List.length reachable_order * 2)) in
+    List.iteri (fun index node -> Hashtbl.replace rank node index)
+      reachable_order;
+    let compare_chain_node left right =
+      match Hashtbl.find_opt rank left, Hashtbl.find_opt rank right with
+      | Some left, Some right -> Int.compare left right
+      | Some _, None -> -1
+      | None, Some _ -> 1
+      | None, None -> Node.compare left right
+    in
+    let nodes_for owner =
+      Hashtbl.fold
+        (fun node owners nodes ->
+           if NodeSet.mem node graph_nodes && List.mem owner owners then
+             node :: nodes
+           else nodes)
+        global_provenance_node_owners []
+      |> List.sort_uniq compare_chain_node
+    in
+    completed_global_provenance_rows :=
+      !pending_global_provenance_rows
+      |> List.rev
+      |> List.map (fun pending ->
+             let owned_nodes = nodes_for pending.pending_owner in
+             let unreachable_nodes, retained =
+               List.partition (fun node -> NodeSet.mem node unreachable)
+                 owned_nodes
+             in
+             let decision_drops =
+               Option.value
+                 (Hashtbl.find_opt global_provenance_decision_drops
+                    pending.pending_owner)
+                 ~default:[]
+             in
+             let dropped =
+               unreachable_nodes @ List.map fst decision_drops
+               |> List.sort_uniq compare_chain_node
+             in
+             let pretrim =
+               owned_nodes @ List.map fst decision_drops
+               |> List.sort_uniq compare_chain_node
+             in
+             let drop_mechanisms =
+               (if unreachable_nodes = [] then []
+                else [ "unreachable-node-trim" ])
+               @ List.map snd decision_drops
+               |> List.sort_uniq String.compare
+             in
+             { global_provenance_global_index = pending.pending_global_index;
+               global_provenance_chain_index = pending.pending_chain_index;
+               global_provenance_item_index = pending.pending_item_index;
+               global_provenance_initializer_index =
+                 pending.pending_initializer_index;
+               global_provenance_name = pending.pending_name;
+               global_provenance_kind = pending.pending_kind;
+               global_provenance_location = pending.pending_location;
+               global_provenance_pretrim_nodes = pretrim;
+               global_provenance_dropped_nodes = dropped;
+               global_provenance_drop_mechanisms = drop_mechanisms;
+               global_provenance_outcome =
+                 if retained = [] then Global_cfg_dropped
+                 else Global_chain_nodes retained })
+      |> List.filter (fun row ->
+             row.global_provenance_pretrim_nodes <> []);
+    global_provenance_tracking_ready := false
+  end
 
 let print_dot : out_channel -> t -> unit
 =fun chan g ->

@@ -39,6 +39,19 @@ let remove_unreachable_nodes : t -> t
 =fun global ->
   let nodes_all = InterCfg.nodesof global.icfg in
   let unreachable = InterCfg.unreachable_node global.icfg in
+  (* This is the post-Mergecil loss decision: observe which generated [_G_]
+     chain nodes the existing reachability trim is about to delete. *)
+  let unreachable_global_nodes =
+    InterCfg.NodeSet.fold
+      (fun node nodes ->
+         if InterCfg.Node.get_pid node = InterCfg.global_proc then
+           IntraCfg.NodeSet.add (InterCfg.Node.get_cfgnode node) nodes
+         else nodes)
+      unreachable IntraCfg.NodeSet.empty
+  in
+  IntraCfg.finish_global_provenance
+    ~unreachable:unreachable_global_nodes
+    (InterCfg.cfgof global.icfg InterCfg.global_proc);
   let global = NodeSet.fold remove_node unreachable global in
   my_prerr_newline ();
   my_prerr_string "#nodes all   : ";

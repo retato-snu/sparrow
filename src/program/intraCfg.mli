@@ -53,6 +53,40 @@ type t
 and node = Node.t
 and cmd = Cmd.t
 
+type global_provenance_item_kind =
+  | Global_variable_declaration
+  | Global_variable_definition
+  | Global_function_definition
+
+type global_provenance_outcome =
+  | Global_chain_nodes of Node.t list
+  | Global_cfg_dropped
+
+type global_provenance_row = {
+  global_provenance_global_index : int;
+  global_provenance_chain_index : int;
+  global_provenance_item_index : int;
+  global_provenance_initializer_index : int option;
+  global_provenance_name : string;
+  global_provenance_kind : global_provenance_item_kind;
+  global_provenance_location : Sparrow_cil.location;
+  global_provenance_pretrim_nodes : Node.t list;
+  global_provenance_dropped_nodes : Node.t list;
+  global_provenance_drop_mechanisms : string list;
+  global_provenance_outcome : global_provenance_outcome;
+}
+
+(** Out-of-band observation switch used only by the independence gate. *)
+val global_provenance_recording : bool ref
+
+(** Rows from the most recent global-CFG construction, finalized at the
+    unreachable-node trimming decision. *)
+val global_provenance_rows : unit -> global_provenance_row list
+
+(** Classify generated global-chain nodes immediately before the caller
+    removes [unreachable]. *)
+val finish_global_provenance : unreachable:NodeSet.t -> t -> unit
+
 val init : Sparrow_cil.fundec -> Sparrow_cil.location -> t
 val generate_module_global_proc :
   Sparrow_cil.global list -> Sparrow_cil.fundec -> t
