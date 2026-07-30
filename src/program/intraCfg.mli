@@ -77,13 +77,19 @@ type global_provenance_row = {
 }
 
 (** A constructive identity witness for one allocation site in a completed
-    per-procedure CFG.  The key is source location plus the syntactic role of
-    the allocation command; [allocation_provenance_site_id] is exactly the
-    internal allocation-site identifier consumed by the abstract domains. *)
+    per-procedure CFG.  The cross-build key is translation unit, original
+    function, source location, syntactic role, and deterministic occurrence
+    index.  Optional identity fields remain absent when the merged-build
+    observer cannot establish them uniquely.  [allocation_provenance_site_id]
+    is exactly the internal allocation-site identifier consumed by the
+    abstract domains. *)
 type allocation_site_provenance_row = {
   allocation_provenance_procedure : string;
+  allocation_provenance_translation_unit : string option;
+  allocation_provenance_original_function : string option;
   allocation_provenance_location : Sparrow_cil.location;
   allocation_provenance_role : string;
+  allocation_provenance_occurrence_index : int;
   allocation_provenance_site_id : string;
   allocation_provenance_node : Node.t;
   allocation_provenance_is_string : bool;

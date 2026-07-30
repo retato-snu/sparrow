@@ -205,8 +205,11 @@ type pending_global_provenance_row = {
 
 type allocation_site_provenance_row = {
   allocation_provenance_procedure : string;
+  allocation_provenance_translation_unit : string option;
+  allocation_provenance_original_function : string option;
   allocation_provenance_location : Sparrow_cil.location;
   allocation_provenance_role : string;
+  allocation_provenance_occurrence_index : int;
   allocation_provenance_site_id : string;
   allocation_provenance_node : Node.t;
   allocation_provenance_is_string : bool;
@@ -223,8 +226,7 @@ let allocation_role = function
        ^ structure.Sparrow_cil.cname, false)
   | Cmd.Csalloc _ -> Some ("string", true)
   | Cmd.Cfalloc (_, function_, _) ->
-    Some
-      ("function:" ^ function_.Sparrow_cil.svar.Sparrow_cil.vname, false)
+    Some ("function:" ^ function_.Sparrow_cil.svar.Sparrow_cil.vname, false)
   | Cmd.Cinstr _ | Cmd.Cif _ | Cmd.CLoop _ | Cmd.Cset _ | Cmd.Cexternal _
   | Cmd.Cassume _ | Cmd.Ccall _ | Cmd.Creturn _ | Cmd.Casm _ | Cmd.Cskip ->
     None
@@ -393,22 +395,28 @@ let fold_edges f g a = G.fold_edges f g.graph a
 let allocation_site_provenance_rows cfg =
   if not !allocation_site_provenance_recording then []
   else
-    fold_node
-      (fun node rows ->
-         let command = find_cmd node cfg in
-         match allocation_role command with
-         | None -> rows
-         | Some (allocation_provenance_role,
-                 allocation_provenance_is_string) ->
-           { allocation_provenance_procedure = get_pid cfg;
-             allocation_provenance_location = Cmd.location_of command;
-             allocation_provenance_role;
-             allocation_provenance_site_id = Node.to_string node;
-             allocation_provenance_node = node;
-             allocation_provenance_is_string }
-           :: rows)
-      cfg []
-    |> List.sort (fun left right ->
+    let procedure = get_pid cfg in
+    let rows =
+      fold_node
+        (fun node rows ->
+           let command = find_cmd node cfg in
+           match allocation_role command with
+           | None -> rows
+           | Some (allocation_provenance_role,
+                   allocation_provenance_is_string) ->
+             let location = Cmd.location_of command in
+             { allocation_provenance_procedure = procedure;
+               allocation_provenance_translation_unit = None;
+               allocation_provenance_original_function = None;
+               allocation_provenance_location = location;
+               allocation_provenance_role;
+               allocation_provenance_occurrence_index = 0;
+               allocation_provenance_site_id = Node.to_string node;
+               allocation_provenance_node = node;
+               allocation_provenance_is_string }
+             :: rows)
+        cfg []
+      |> List.sort (fun left right ->
            let left_location = left.allocation_provenance_location in
            let right_location = right.allocation_provenance_location in
            let compared =
@@ -430,6 +438,27 @@ let allocation_site_provenance_rows cfg =
                if compared <> 0 then compared
                else Node.compare left.allocation_provenance_node
                       right.allocation_provenance_node)
+    in
+    let occurrences = Hashtbl.create (max 17 (List.length rows * 2)) in
+    List.map
+      (fun row ->
+         let location = row.allocation_provenance_location in
+         let key =
+           String.concat "\000"
+             [ Option.value row.allocation_provenance_translation_unit
+                 ~default:"";
+               Option.value row.allocation_provenance_original_function
+                 ~default:"";
+               location.Sparrow_cil.file;
+               string_of_int location.Sparrow_cil.line;
+               row.allocation_provenance_role ]
+         in
+         let occurrence =
+           Option.value (Hashtbl.find_opt occurrences key) ~default:0
+         in
+         Hashtbl.replace occurrences key (occurrence + 1);
+         { row with allocation_provenance_occurrence_index = occurrence })
+      rows
 
 let is_entry : node -> bool
 =fun node ->
