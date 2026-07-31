@@ -1302,14 +1302,20 @@ let is_candidate n g =
 
 (* arr[0] = c0; arr[1] = c1; ..., arr[n] = cn; => sparrow_array_init(arr,c0, c1, ..., cn);
    salloc(arr[0], x0); x0 = s0; ..., => sparrow_array_init(arr, s0, s1, ..., sn) *)
-let optimize_array_init : t -> t
+let rec make_replacement_node g replaced =
+  let node = Node.make () in
+  if G.mem_vertex g.graph node && not (List.mem node replaced) then
+    make_replacement_node g replaced
+  else node
+
+let optimize_array_init_with make_node : t -> t
 = fun g ->
   fold_node (fun n g ->
       match is_candidate n g with
         Some lval ->
           let (nodes, exps) = collect g n lval [] [] in
           if List.length nodes > 1 then
-            let new_node = Node.make () in
+            let new_node = make_node g nodes in
             let g = merge_vertex g (new_node::nodes) in
             let args = (Sparrow_cil.Lval lval)::(List.rev exps) in
             let loc = find_cmd n g |> Cmd.location_of in
@@ -1318,7 +1324,7 @@ let optimize_array_init : t -> t
           else g
       | _ -> g) g g
 
-let optimize : t -> t
+let optimize_with optimize_array_init : t -> t
 = fun g ->
   if get_pid g = "_G_" && !global_provenance_tracking_ready then begin
     global_provenance_observing_current_cfg := true;
@@ -1326,6 +1332,23 @@ let optimize : t -> t
       ~finally:(fun () -> global_provenance_observing_current_cfg := false)
       (fun () -> optimize_array_init g)
   end else optimize_array_init g
+
+let collision_safe_global_replacement = ref false
+
+let with_collision_safe_global_replacement f =
+  let previous = !collision_safe_global_replacement in
+  collision_safe_global_replacement := true;
+  Fun.protect
+    ~finally:(fun () -> collision_safe_global_replacement := previous)
+    f
+
+let optimize g =
+  let optimize_array_init =
+    if !collision_safe_global_replacement && get_pid g = "_G_" then
+      optimize_array_init_with make_replacement_node
+    else optimize_array_init_with (fun _ _ -> Node.make ())
+  in
+  optimize_with optimize_array_init g
 
 let finish_global_provenance ~unreachable g =
   if not !global_provenance_recording then begin

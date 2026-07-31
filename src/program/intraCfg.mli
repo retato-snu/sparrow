@@ -143,6 +143,7 @@ val unreachable_node : t -> NodeSet.t
 val compute_scc : t -> t
 
 val optimize : t -> t
+val with_collision_safe_global_replacement : (unit -> 'a) -> 'a
 
 val fold_node : (node -> 'a -> 'a) -> t -> 'a -> 'a
 val fold_edges : (node -> node -> 'a -> 'a) -> t -> 'a -> 'a
