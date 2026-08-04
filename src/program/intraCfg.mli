@@ -76,6 +76,48 @@ type global_provenance_row = {
   global_provenance_outcome : global_provenance_outcome;
 }
 
+(** Closed role vocabulary for a generated temporary in the synthetic [_G_]
+    construction.  These roles describe the source construction event, not a
+    later CFG opcode or an emitted-command ordinal. *)
+type construction_temp_generation_role =
+  | Aggregate_storage
+  | Nested_array_storage
+  | Field_storage
+  | Array_loop_index
+  | String_literal
+  | Sizeof_string
+
+type construction_temp_outcome =
+  | Construction_temp_survives of Node.t list
+  | Construction_temp_absorbed_by of Node.t list
+  | Construction_temp_dropped
+
+(** Observation-only creation record for a synthetic [_G_] temporary.
+    [construction_temp_initializer_or_type_path] and
+    [construction_temp_expression_child_path] are captured before the final
+    temporary spelling and node ordinal can become identity.  Type and
+    payload spellings are canonical preimages; consumers hash them under the
+    versioned source-path token contract. *)
+type construction_temp_provenance_row = {
+  construction_temp_owner_global_index : int;
+  construction_temp_owner_chain_index : int;
+  construction_temp_owner_initializer_index : int option;
+  construction_temp_owner_name : string;
+  construction_temp_owner_kind : global_provenance_item_kind;
+  construction_temp_owner_location : Sparrow_cil.location;
+  construction_temp_initializer_or_type_path : string;
+  construction_temp_expression_child_path : string;
+  construction_temp_generation_role : construction_temp_generation_role;
+  construction_temp_type_preimage : string;
+  construction_temp_payload_preimage : string;
+  construction_temp_final_name : string;
+  construction_temp_pretrim_nodes : Node.t list;
+  construction_temp_outcome : construction_temp_outcome;
+}
+
+val string_of_construction_temp_generation_role :
+  construction_temp_generation_role -> string
+
 (** A constructive identity witness for one allocation site in a completed
     per-procedure CFG.  The cross-build key is translation unit, original
     function, source location, syntactic role, and deterministic occurrence
@@ -108,6 +150,12 @@ val global_provenance_recording : bool ref
 (** Rows from the most recent global-CFG construction, finalized at the
     unreachable-node trimming decision. *)
 val global_provenance_rows : unit -> global_provenance_row list
+
+(** Temp-event rows from the most recent global-CFG construction.  The table
+    uses the same recording switch and follows graph replacement in parallel
+    with {!global_provenance_rows}. *)
+val construction_temp_provenance_rows :
+  unit -> construction_temp_provenance_row list
 
 (** Classify generated global-chain nodes immediately before the caller
     removes [unreachable]. *)

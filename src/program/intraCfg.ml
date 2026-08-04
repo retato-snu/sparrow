@@ -203,6 +203,66 @@ type pending_global_provenance_row = {
   pending_location : Sparrow_cil.location;
 }
 
+type construction_temp_generation_role =
+  | Aggregate_storage
+  | Nested_array_storage
+  | Field_storage
+  | Array_loop_index
+  | String_literal
+  | Sizeof_string
+
+let string_of_construction_temp_generation_role = function
+  | Aggregate_storage -> "aggregate-storage"
+  | Nested_array_storage -> "nested-array-storage"
+  | Field_storage -> "field-storage"
+  | Array_loop_index -> "array-loop-index"
+  | String_literal -> "string-literal"
+  | Sizeof_string -> "sizeof-string"
+
+type construction_temp_outcome =
+  | Construction_temp_survives of Node.t list
+  | Construction_temp_absorbed_by of Node.t list
+  | Construction_temp_dropped
+
+type construction_temp_provenance_row = {
+  construction_temp_owner_global_index : int;
+  construction_temp_owner_chain_index : int;
+  construction_temp_owner_initializer_index : int option;
+  construction_temp_owner_name : string;
+  construction_temp_owner_kind : global_provenance_item_kind;
+  construction_temp_owner_location : Sparrow_cil.location;
+  construction_temp_initializer_or_type_path : string;
+  construction_temp_expression_child_path : string;
+  construction_temp_generation_role : construction_temp_generation_role;
+  construction_temp_type_preimage : string;
+  construction_temp_payload_preimage : string;
+  construction_temp_final_name : string;
+  construction_temp_pretrim_nodes : Node.t list;
+  construction_temp_outcome : construction_temp_outcome;
+}
+
+type construction_temp_owner = {
+  temp_owner_global_index : int;
+  temp_owner_chain_index : int;
+  temp_owner_initializer_index : int option;
+  temp_owner_name : string;
+  temp_owner_kind : global_provenance_item_kind;
+  temp_owner_location : Sparrow_cil.location;
+}
+
+type pending_construction_temp = {
+  pending_temp_id : int;
+  pending_temp_owner : construction_temp_owner;
+  pending_temp_initializer_or_type_path : string;
+  pending_temp_expression_child_path : string;
+  pending_temp_generation_role : construction_temp_generation_role;
+  pending_temp_type_preimage : string;
+  pending_temp_payload_preimage : string;
+  pending_temp_varinfo : Sparrow_cil.varinfo option;
+  pending_temp_initial_name : string;
+  pending_temp_original_nodes : Node.t list;
+}
+
 type allocation_site_provenance_row = {
   allocation_provenance_procedure : string;
   allocation_provenance_translation_unit : string option;
@@ -243,7 +303,83 @@ let global_provenance_decision_drops :
     (int, (Node.t * string) list) Hashtbl.t =
   Hashtbl.create 128
 
+let active_construction_temp_owner : construction_temp_owner option ref =
+  ref None
+let next_construction_temp_id = ref 0
+let pending_construction_temps : pending_construction_temp list ref = ref []
+let completed_construction_temp_rows :
+    construction_temp_provenance_row list ref = ref []
+let construction_temp_node_events : (Node.t, int list) Hashtbl.t =
+  Hashtbl.create 257
+
 let global_provenance_rows () = !completed_global_provenance_rows
+let construction_temp_provenance_rows () = !completed_construction_temp_rows
+
+let construction_temp_events node =
+  Option.value (Hashtbl.find_opt construction_temp_node_events node)
+    ~default:[]
+
+let construction_temp_assign events nodes =
+  if !global_provenance_recording && !global_provenance_tracking_ready then
+    NodeSet.iter
+      (fun node ->
+         let old = construction_temp_events node in
+         Hashtbl.replace construction_temp_node_events node
+           (List.sort_uniq Int.compare (events @ old)))
+      nodes
+
+let construction_temp_remove nodes =
+  if !global_provenance_recording && !global_provenance_tracking_ready then
+    NodeSet.iter (Hashtbl.remove construction_temp_node_events) nodes
+
+let construction_temp_replace removed added =
+  if !global_provenance_recording && !global_provenance_tracking_ready then begin
+    let events =
+      NodeSet.fold
+        (fun node events -> construction_temp_events node @ events)
+        removed []
+      |> List.sort_uniq Int.compare
+    in
+    construction_temp_remove removed;
+    construction_temp_assign events added
+  end
+
+let construction_temp_name = function
+  | Sparrow_cil.Var variable, Sparrow_cil.NoOffset -> variable.vname
+  | lvalue -> CilHelper.s_lv lvalue
+
+let construction_temp_varinfo = function
+  | Sparrow_cil.Var variable, Sparrow_cil.NoOffset -> Some variable
+  | _ -> None
+
+let record_construction_temp_for_owner owner ~path ~child_path ~role ~typ
+    ~payload ~lvalue nodes =
+  if !global_provenance_recording && !global_provenance_tracking_ready then begin
+    let id = !next_construction_temp_id in
+    incr next_construction_temp_id;
+    let original_nodes = NodeSet.elements nodes in
+    pending_construction_temps :=
+      { pending_temp_id = id;
+        pending_temp_owner = owner;
+        pending_temp_initializer_or_type_path = path;
+        pending_temp_expression_child_path = child_path;
+        pending_temp_generation_role = role;
+        pending_temp_type_preimage = CilHelper.s_type typ;
+        pending_temp_payload_preimage = payload;
+        pending_temp_varinfo = construction_temp_varinfo lvalue;
+        pending_temp_initial_name = construction_temp_name lvalue;
+        pending_temp_original_nodes = original_nodes }
+      :: !pending_construction_temps;
+    construction_temp_assign [ id ] nodes
+  end
+
+let record_construction_temp ~path ~child_path ~role ~typ ~payload ~lvalue
+    nodes =
+  Option.iter
+    (fun owner ->
+       record_construction_temp_for_owner owner ~path ~child_path ~role ~typ
+         ~payload ~lvalue nodes)
+    !active_construction_temp_owner
 
 let global_provenance_owners node =
   Option.value (Hashtbl.find_opt global_provenance_node_owners node) ~default:[]
@@ -263,7 +399,10 @@ let global_provenance_remove nodes =
   if !global_provenance_recording && !global_provenance_tracking_ready
      && !global_provenance_observing_current_cfg
   then
-    NodeSet.iter (Hashtbl.remove global_provenance_node_owners) nodes
+    begin
+      NodeSet.iter (Hashtbl.remove global_provenance_node_owners) nodes;
+      construction_temp_remove nodes
+    end
 
 let global_provenance_replace removed added =
   if !global_provenance_recording && !global_provenance_tracking_ready
@@ -275,6 +414,7 @@ let global_provenance_replace removed added =
         removed []
       |> List.sort_uniq Int.compare
     in
+    construction_temp_replace removed added;
     global_provenance_remove removed;
     global_provenance_assign owners added
   end
@@ -617,7 +757,7 @@ let make_struct : Sparrow_cil.fundec -> Sparrow_cil.lval -> Sparrow_cil.compinfo
   let alloc_cmd = Cmd.Calloc (lv, Cmd.Struct comp, true, loc) in
   (alloc_node, g |> add_cmd alloc_node alloc_cmd |> add_edge entry alloc_node)
 
-let make_init_loop fd lv exp loc entry f g =
+let make_init_loop ?(path = "type/unknown") fd lv exp loc entry f g =
   (* i = 0 *)
   let init_node = Node.make () in
   let idxinfo = Sparrow_cil.makeTempVar fd (Sparrow_cil.TInt (IInt, [])) in
@@ -625,6 +765,10 @@ let make_init_loop fd lv exp loc entry f g =
   let init_value = Sparrow_cil.Const (Sparrow_cil.CInt (Sparrow_cil.Cilint.zero_cilint, IInt, None)) in
   let init_cmd = Cmd.Cset (idx, init_value, loc) in
   let g = add_cmd init_node init_cmd g in
+  record_construction_temp
+    ~path:(path ^ "/loop-index") ~child_path:"type-driven"
+    ~role:Array_loop_index ~typ:idxinfo.Sparrow_cil.vtype
+    ~payload:"zero-init" ~lvalue:idx (NodeSet.singleton init_node);
   (* while (i < exp) *)
   let skip_node = Node.make () in
   let g = add_cmd skip_node Cmd.Cskip g in
@@ -650,7 +794,7 @@ let make_init_loop fd lv exp loc entry f g =
   let g = add_edge incr_node skip_node g in
   (nassume_node, g)
 
-let rec make_nested_array : Sparrow_cil.fundec -> Sparrow_cil.lval -> Sparrow_cil.typ -> Sparrow_cil.exp -> Sparrow_cil.location -> node -> bool -> t -> (node * t)
+let rec make_nested_array ?(path = "type/unknown") : Sparrow_cil.fundec -> Sparrow_cil.lval -> Sparrow_cil.typ -> Sparrow_cil.exp -> Sparrow_cil.location -> node -> bool -> t -> (node * t)
 = fun fd lv typ exp loc entry initialize g ->
   let typ = unrollTypeDeep typ in
   match typ with
@@ -659,19 +803,27 @@ let rec make_nested_array : Sparrow_cil.fundec -> Sparrow_cil.lval -> Sparrow_ci
         (* tmp = malloc(size); lv[i] = tmp *)
         let tmp = (Sparrow_cil.Var (Sparrow_cil.makeTempVar fd (Sparrow_cil.TPtr (Sparrow_cil.TVoid [], []))), Sparrow_cil.NoOffset) in
         let (term, g) = make_array fd tmp t size loc assume_node g in
+        record_construction_temp
+          ~path:(path ^ "/nested-array/storage")
+          ~child_path:"type-driven" ~role:Nested_array_storage
+          ~typ:(Sparrow_cil.typeOfLval tmp)
+          ~payload:("extent:" ^ CilHelper.s_exp size) ~lvalue:tmp
+          (NodeSet.singleton term);
         let cast_node = Node.make () in
         let cast_cmd = Cmd.Cset (element, Sparrow_cil.CastE (Explicit, TPtr (t, []), Sparrow_cil.Lval tmp), loc) in
         let g = g |> add_cmd cast_node cast_cmd |> add_edge term cast_node in
-        make_nested_array fd element t size loc cast_node initialize g
+        make_nested_array ~path:(path ^ "/nested-array") fd element t size
+          loc cast_node initialize g
       in
-      make_init_loop fd lv exp loc entry f g
+      make_init_loop ~path fd lv exp loc entry f g
   | TComp(comp, _) ->
       let f assume_node element g =
         (* tmp = malloc(size); lv[i] = tmp *)
         let (term, g) = make_struct fd element comp loc assume_node g in
-        generate_allocs_field comp.cfields element fd term g
+        generate_allocs_field ~path:(path ^ "/element-struct")
+          comp.cfields element fd term g
       in
-      make_init_loop fd lv exp loc entry f g
+      make_init_loop ~path fd lv exp loc entry f g
   | _ when initialize ->
       let f assume_node element g =
         (* lv[i] = 0 *)
@@ -679,10 +831,10 @@ let rec make_nested_array : Sparrow_cil.fundec -> Sparrow_cil.lval -> Sparrow_ci
         let init_cmd = Cmd.Cset (element, Sparrow_cil.zero, loc) in
         (init_node, g |> add_cmd init_node init_cmd |> add_edge assume_node init_node)
       in
-      make_init_loop fd lv exp loc entry f g
+      make_init_loop ~path fd lv exp loc entry f g
   | _ -> (entry, g)
 
-and generate_allocs_field : Sparrow_cil.fieldinfo list -> Sparrow_cil.lval -> Sparrow_cil.fundec -> node -> t ->  (node * t)
+and generate_allocs_field ?(path = "type/unknown") : Sparrow_cil.fieldinfo list -> Sparrow_cil.lval -> Sparrow_cil.fundec -> node -> t ->  (node * t)
 =fun fl lv fd entry g ->
   match fl with
     [] -> (entry, g)
@@ -693,17 +845,30 @@ and generate_allocs_field : Sparrow_cil.fieldinfo list -> Sparrow_cil.lval -> Sp
           let field = addOffsetLval (Sparrow_cil.Field (fieldinfo, Sparrow_cil.NoOffset)) lv in
           let tmp = (Sparrow_cil.Var (Sparrow_cil.makeTempVar fd Sparrow_cil.voidPtrType), Sparrow_cil.NoOffset) in
           let (term, g) = make_array fd tmp typ exp fieldinfo.floc entry g in
+          let field_path = path ^ "/field:" ^ fieldinfo.Sparrow_cil.fname in
+          record_construction_temp
+            ~path:(field_path ^ "/storage") ~child_path:"type-driven"
+            ~role:Field_storage ~typ:(Sparrow_cil.typeOfLval tmp)
+            ~payload:("extent:" ^ CilHelper.s_exp exp) ~lvalue:tmp
+            (NodeSet.singleton term);
           let cast_node = Node.make () in
           let cast_cmd = Cmd.Cset (field, Sparrow_cil.CastE (Sparrow_cil.Explicit, Sparrow_cil.TPtr (typ, []), Sparrow_cil.Lval tmp), fieldinfo.floc) in
           let g = g |> add_cmd cast_node cast_cmd |> add_edge term cast_node in
-          let (term, g) = make_nested_array fd field typ exp fieldinfo.floc cast_node false g in
-            generate_allocs_field t lv fd term g
+          let (term, g) =
+            make_nested_array ~path:field_path fd field typ exp fieldinfo.floc
+              cast_node false g
+          in
+            generate_allocs_field ~path t lv fd term g
       | TComp (comp, _) ->
           let field = addOffsetLval (Sparrow_cil.Field (fieldinfo, Sparrow_cil.NoOffset)) lv in
           let (term, g) = make_struct fd field comp fieldinfo.floc entry g in
-          let (term, g) = generate_allocs_field comp.cfields field fd term g in
-          generate_allocs_field t lv fd term g
-      | _ -> generate_allocs_field t lv fd entry g
+          let (term, g) =
+            generate_allocs_field
+              ~path:(path ^ "/field:" ^ fieldinfo.Sparrow_cil.fname)
+              comp.cfields field fd term g
+          in
+          generate_allocs_field ~path t lv fd term g
+      | _ -> generate_allocs_field ~path t lv fd entry g
       end
 and get_base_type typ =
   match typ with
@@ -725,12 +890,18 @@ let rec generate_allocs : Sparrow_cil.fundec -> Sparrow_cil.varinfo list -> node
           let cast_node = Node.make () in
           let cast_cmd = Cmd.Cset (lv, Sparrow_cil.CastE (Sparrow_cil.Explicit, Sparrow_cil.TPtr (unrollTypeDeep typ, []), Sparrow_cil.Lval tmp), varinfo.vdecl) in
           let g = g |> add_cmd cast_node cast_cmd |> add_edge term cast_node in
-          let (term, g) = make_nested_array fd lv typ exp varinfo.vdecl cast_node false g in
+          let (term, g) =
+            make_nested_array ~path:("type/local:" ^ varinfo.Sparrow_cil.vname)
+              fd lv typ exp varinfo.vdecl cast_node false g
+          in
             generate_allocs fd t term g
       | TComp (comp, _) ->
           let lv = (Sparrow_cil.Var varinfo, Sparrow_cil.NoOffset) in
           let (term, g) = make_struct fd lv comp varinfo.vdecl entry g in
-          let (term, g) = generate_allocs_field comp.cfields lv fd term g in
+          let (term, g) =
+            generate_allocs_field ~path:("type/local:" ^ varinfo.Sparrow_cil.vname)
+              comp.cfields lv fd term g
+          in
           generate_allocs fd t term g
       | _ -> generate_allocs fd t entry g
       end
@@ -756,47 +927,113 @@ let replace_node_graph : node -> node -> node -> t -> t
   g
 
 (* string allocation  *)
+let construction_temp_owner_of_pending pending =
+  { temp_owner_global_index = pending.pending_global_index;
+    temp_owner_chain_index = pending.pending_chain_index;
+    temp_owner_initializer_index = pending.pending_initializer_index;
+    temp_owner_name = pending.pending_name;
+    temp_owner_kind = pending.pending_kind;
+    temp_owner_location = pending.pending_location }
+
+let construction_temp_owners_for_node node =
+  let owners =
+    global_provenance_owners node
+    |> List.filter_map (fun owner ->
+           !pending_global_provenance_rows
+           |> List.find_opt (fun pending -> pending.pending_owner = owner)
+           |> Option.map construction_temp_owner_of_pending)
+    |> List.sort_uniq (fun left right ->
+           compare
+             (left.temp_owner_global_index, left.temp_owner_chain_index,
+              left.temp_owner_initializer_index, left.temp_owner_name)
+             (right.temp_owner_global_index, right.temp_owner_chain_index,
+              right.temp_owner_initializer_index, right.temp_owner_name))
+  in
+  let declared_elsewhere name =
+    !pending_global_provenance_rows
+    |> List.exists (fun pending ->
+           pending.pending_name = name
+           && pending.pending_kind <> Global_variable_declaration)
+  in
+  let owners =
+    owners
+    |> List.filter (fun owner ->
+           owner.temp_owner_kind <> Global_variable_declaration
+           || not (declared_elsewhere owner.temp_owner_name))
+    |> List.sort (fun left right ->
+           Int.compare left.temp_owner_global_index
+             right.temp_owner_global_index)
+  in
+  (* String expansion happens after CFG-node coalescing.  Reuse the global
+     construction observer's established primary-owner rule: declarations
+     shadowed by a definition are not owners, and the first surviving global
+     owns a coalesced node.  This selects the construction event, not a value
+     or digest match, and makes the singular owner part of the observation. *)
+  match owners with [] -> [] | owner :: _ -> [ owner ]
+
+let rec construction_offset_path = function
+  | Sparrow_cil.NoOffset -> ""
+  | Sparrow_cil.Field (field, rest) ->
+    "/field:" ^ field.Sparrow_cil.fname ^ construction_offset_path rest
+  | Sparrow_cil.Index (index, rest) ->
+    let component =
+      if Sparrow_cil.isConstant index then "index:" ^ CilHelper.s_exp index
+      else "index-expression:" ^ CilHelper.s_exp index
+    in
+    "/" ^ component ^ construction_offset_path rest
+
+let construction_lvalue_path = function
+  | Sparrow_cil.Var _, offset -> "initializer" ^ construction_offset_path offset
+  | Sparrow_cil.Mem _, offset ->
+    "initializer/memory" ^ construction_offset_path offset
+
 let transform_string_allocs : Sparrow_cil.fundec -> t -> t
 = fun fd g ->
-  let rec replace_str : Sparrow_cil.exp -> Sparrow_cil.exp * (Sparrow_cil.lval * string) list
-  = fun e ->
+  let rec replace_str child_path e =
     match e with
       Const (CStr (s, _)) ->
         let tempinfo = Sparrow_cil.makeTempVar fd (Sparrow_cil.TPtr (Sparrow_cil.TInt (IChar, []), [])) in
         let temp = (Sparrow_cil.Var tempinfo, Sparrow_cil.NoOffset) in
-          (Lval temp, [(temp, s)])
+          (Lval temp,
+           [ (temp, s, String_literal, child_path, tempinfo.vtype) ])
     | Lval (Mem exp, off) ->
-        let (exp', l) = replace_str exp in
+        let (exp', l) = replace_str (child_path ^ "/lvalue-memory") exp in
         (match l with [] -> (e, l) | _ -> (Lval (Mem exp', off), l))
     | SizeOfStr s ->
         let tempinfo = Sparrow_cil.makeTempVar fd (Sparrow_cil.TPtr (Sparrow_cil.TInt (IChar, []), [])) in
         let temp = (Sparrow_cil.Var tempinfo, Sparrow_cil.NoOffset) in
-          (Lval temp, [(temp, s)])
+          (Lval temp,
+           [ (temp, s, Sizeof_string, child_path, tempinfo.vtype) ])
     | SizeOfE exp ->
-        let (exp', l) = replace_str exp in
+        let (exp', l) = replace_str (child_path ^ "/sizeof") exp in
         (match l with [] -> (e, l) | _ -> (SizeOfE exp', l))
     | AlignOfE exp ->
-        let (exp', l) = replace_str exp in
+        let (exp', l) = replace_str (child_path ^ "/alignof") exp in
         (match l with [] -> (e, l) | _ -> (AlignOfE exp', l))
     | UnOp (u, exp, t) ->
-        let (exp', l) = replace_str exp in
+        let (exp', l) = replace_str (child_path ^ "/unary") exp in
         (match l with [] -> (e, l) | _ -> (UnOp (u, exp', t), l))
     | BinOp (b, e1, e2, t) ->
-        let (e1', l1) = replace_str e1 in
-        let (e2', l2) = replace_str e2 in
+        let (e1', l1) = replace_str (child_path ^ "/binary-left") e1 in
+        let (e2', l2) = replace_str (child_path ^ "/binary-right") e2 in
         (match l1@l2 with [] -> (e, []) | _ -> (BinOp (b, e1', e2', t), l1@l2))
     | CastE (_, t, exp) ->
-        let (exp', l) = replace_str exp in
+        let (exp', l) = replace_str (child_path ^ "/cast") exp in
         (match l with [] -> (e, l) | _ -> (CastE (Sparrow_cil.Explicit, t, exp'), l))
     | _ -> (e, [])
   in
-  let generate_sallocs : (Sparrow_cil.lval * string) list -> Sparrow_cil.location -> node -> t -> (node * t)
-  = fun l loc node g ->
-    List.fold_left (fun (node, g) (lv, s) ->
+  let generate_sallocs owners path l loc node g =
+    List.fold_left (fun (node, g) (lv, s, role, child_path, typ) ->
                     let new_node = Node.make () in
                     let g = add_edge node new_node g in
                     let cmd = Cmd.Csalloc (lv, s, loc) in
                     let g = add_cmd new_node cmd g in
+                    List.iter
+                      (fun owner ->
+                         record_construction_temp_for_owner owner ~path
+                           ~child_path ~role ~typ ~payload:s ~lvalue:lv
+                           (NodeSet.singleton new_node))
+                      owners;
                     (new_node, g)) (node, g) l
     in
     (* make it consistent with manual encoding in *Sem.ml *)
@@ -805,23 +1042,29 @@ let transform_string_allocs : Sparrow_cil.fundec -> t -> t
     fold_node (fun n g ->
       match find_cmd n g with
         Cmd.Cset (lv, e, loc) ->
-          (match replace_str e with
+          (match replace_str "expression-root" e with
             (_, []) -> g
           | (e, l) ->
             let (empty_node, last_node) = (Node.make (), Node.make ()) in
             let g = add_cmd empty_node Cmd.Cskip g in
-            let (node, g) = generate_sallocs l loc empty_node g in
+            let (node, g) =
+              generate_sallocs (construction_temp_owners_for_node n)
+                (construction_lvalue_path lv) l loc empty_node g
+            in
             let cmd = Cmd.Cset (lv, e, loc) in
             let g = add_cmd last_node cmd g in
             let g = add_edge node last_node g in
               replace_node_graph n empty_node last_node g)
       | Cmd.Cassume (e, loc) ->
-          (match replace_str e with
+          (match replace_str "assume-root" e with
             (_, []) -> g
           | (e, l) ->
             let (empty_node, last_node) = (Node.make (), Node.make ()) in
             let g = add_cmd empty_node Cmd.Cskip g in
-            let (node, g) = generate_sallocs l loc empty_node g in
+            let (node, g) =
+              generate_sallocs (construction_temp_owners_for_node n)
+                "command/assume" l loc empty_node g
+            in
             let cmd = Cmd.Cassume (e, loc) in
             let g = add_cmd last_node cmd g in
             let g = add_edge node last_node g in
@@ -830,26 +1073,38 @@ let transform_string_allocs : Sparrow_cil.fundec -> t -> t
       | Cmd.Ccall (lv, Sparrow_cil.Lval (Sparrow_cil.Var f, Sparrow_cil.NoOffset), el, loc)
         when f.vstorage = Sparrow_cil.Extern && not (List.mem f.vname targets) -> g
       | Cmd.Ccall (lv, f, el, loc) ->
-          let (el, l) = List.fold_left (fun (el, l) param ->
-              let (e', l') = replace_str param in
-              (el@[e'], l@l')) ([], []) el in
+          let (el, l) =
+            el
+            |> List.mapi (fun index param -> index, param)
+            |> List.fold_left (fun (el, l) (index, param) ->
+                 let (e', l') =
+                   replace_str ("call-argument:" ^ string_of_int index) param
+                 in
+                 (el@[e'], l@l')) ([], [])
+          in
           (match (el, l) with
             (_, []) -> g
           | (el, l) ->
             let (empty_node, last_node) = (Node.make (), Node.make ()) in
             let g = add_cmd empty_node Cmd.Cskip g in
-            let (node, g) = generate_sallocs l loc empty_node g in
+            let (node, g) =
+              generate_sallocs (construction_temp_owners_for_node n)
+                "command/call" l loc empty_node g
+            in
             let cmd = Cmd.Ccall (lv, f, el, loc) in
             let g = add_cmd last_node cmd g in
             let g = add_edge node last_node g in
               replace_node_graph n empty_node last_node g)
       | Cmd.Creturn (Some e, loc) ->
-           (match replace_str e with
+           (match replace_str "return-root" e with
             (_, []) -> g
           | (e, l) ->
             let (empty_node, last_node) = (Node.make (), Node.make ()) in
             let g = add_cmd empty_node Cmd.Cskip g in
-            let (node, g) = generate_sallocs l loc empty_node g in
+            let (node, g) =
+              generate_sallocs (construction_temp_owners_for_node n)
+                "command/return" l loc empty_node g
+            in
             let cmd = Cmd.Creturn (Some e, loc) in
             let g = add_cmd last_node cmd g in
             let g = add_edge node last_node g in
@@ -975,10 +1230,18 @@ let rec process_gvardecl : Sparrow_cil.fundec -> Sparrow_cil.lval -> Sparrow_cil
   | TArray (typ, Some exp, _) ->
       let tmp = (Sparrow_cil.Var (Sparrow_cil.makeTempVar fd Sparrow_cil.voidPtrType), Sparrow_cil.NoOffset) in
       let (term, g) = make_array fd tmp typ exp loc entry g in
+      record_construction_temp
+        ~path:"type/root-array/storage" ~child_path:"type-driven"
+        ~role:Aggregate_storage ~typ:(Sparrow_cil.typeOfLval tmp)
+        ~payload:("extent:" ^ CilHelper.s_exp exp) ~lvalue:tmp
+        (NodeSet.singleton term);
       let cast_node = Node.make () in
       let cast_cmd = Cmd.Cset (lv, Sparrow_cil.CastE (Sparrow_cil.Explicit, Sparrow_cil.TPtr (typ, []), Sparrow_cil.Lval tmp), loc) in
       let g = g |> add_cmd cast_node cast_cmd |> add_edge term cast_node in
-      let (term, g) = make_nested_array fd lv typ exp loc cast_node true g in
+      let (term, g) =
+        make_nested_array ~path:"type/root-array" fd lv typ exp loc cast_node
+          true g
+      in
       (term, g)
   | TInt (_, _) | TFloat (_, _) ->
       let node = Node.make () in
@@ -986,7 +1249,10 @@ let rec process_gvardecl : Sparrow_cil.fundec -> Sparrow_cil.lval -> Sparrow_cil
       (node, g |> add_cmd node cmd |> add_edge entry node)
   | TComp (comp, _) ->
       let (term, g) = make_struct fd lv comp loc entry g in
-      let (term, g) = generate_allocs_field comp.cfields lv fd term g in
+      let (term, g) =
+        generate_allocs_field ~path:"type/root-struct" comp.cfields lv fd
+          term g
+      in
       (term, g)
   | _ -> (entry, g)
 
@@ -1083,8 +1349,13 @@ let init : Sparrow_cil.fundec -> Sparrow_cil.location -> t
 let generate_global_chain globals fd =
   pending_global_provenance_rows := [];
   completed_global_provenance_rows := [];
+  pending_construction_temps := [];
+  completed_construction_temp_rows := [];
+  next_construction_temp_id := 0;
+  active_construction_temp_owner := None;
   Hashtbl.clear global_provenance_node_owners;
   Hashtbl.clear global_provenance_decision_drops;
+  Hashtbl.clear construction_temp_node_events;
   global_provenance_tracking_ready := !global_provenance_recording;
   global_provenance_observing_current_cfg := !global_provenance_recording;
   let global_index = ref (-1) in
@@ -1127,18 +1398,35 @@ let generate_global_chain globals fd =
        let metadata = item_metadata global in
        let before = NodeSet.of_list (nodesof g) in
        let term, g =
-         match global with
-         | Sparrow_cil.GVar (variable, initinfo, location) ->
-           process_gvar fd (Sparrow_cil.var variable) initinfo location
-             node g
-         | Sparrow_cil.GVarDecl (variable, location) ->
-           process_gvardecl fd (Sparrow_cil.var variable) location node g
-         | Sparrow_cil.GFun (function_, location) ->
-           process_fundecl fd function_ location node g
-         | Sparrow_cil.GType _ | Sparrow_cil.GCompTag _
-         | Sparrow_cil.GCompTagDecl _ | Sparrow_cil.GEnumTag _
-         | Sparrow_cil.GEnumTagDecl _ | Sparrow_cil.GAsm _
-         | Sparrow_cil.GPragma _ | Sparrow_cil.GText _ -> node, g
+         let owner =
+           match metadata with
+           | None -> None
+           | Some (chain, initializer_slot, name, kind, location) ->
+             Some
+               { temp_owner_global_index = !global_index;
+                 temp_owner_chain_index = chain;
+                 temp_owner_initializer_index = initializer_slot;
+                 temp_owner_name = name;
+                 temp_owner_kind = kind;
+                 temp_owner_location = location }
+         in
+         let previous = !active_construction_temp_owner in
+         active_construction_temp_owner := owner;
+         Fun.protect
+           ~finally:(fun () -> active_construction_temp_owner := previous)
+           (fun () ->
+              match global with
+              | Sparrow_cil.GVar (variable, initinfo, location) ->
+                process_gvar fd (Sparrow_cil.var variable) initinfo location
+                  node g
+              | Sparrow_cil.GVarDecl (variable, location) ->
+                process_gvardecl fd (Sparrow_cil.var variable) location node g
+              | Sparrow_cil.GFun (function_, location) ->
+                process_fundecl fd function_ location node g
+              | Sparrow_cil.GType _ | Sparrow_cil.GCompTag _
+              | Sparrow_cil.GCompTagDecl _ | Sparrow_cil.GEnumTag _
+              | Sparrow_cil.GEnumTagDecl _ | Sparrow_cil.GAsm _
+              | Sparrow_cil.GPragma _ | Sparrow_cil.GText _ -> node, g)
        in
        let generated = NodeSet.diff (NodeSet.of_list (nodesof g)) before in
        (match metadata with
@@ -1236,6 +1524,10 @@ let merge_vertex g vl =
     |> List.concat_map global_provenance_owners
     |> List.sort_uniq Int.compare
   in
+  let source_temp_events =
+    vl |> List.concat_map construction_temp_events
+    |> List.sort_uniq Int.compare
+  in
   let lost_owners =
     if replacement_existed then
       List.filter (fun owner -> not (List.mem owner source_owners))
@@ -1251,6 +1543,8 @@ let merge_vertex g vl =
   then begin
     global_provenance_remove (NodeSet.of_list vl);
     global_provenance_assign source_owners (NodeSet.singleton replacement);
+    construction_temp_assign source_temp_events
+      (NodeSet.singleton replacement);
     global_provenance_record_drop lost_owners replacement
       "node-id-collision-overwrite"
   end;
@@ -1353,6 +1647,7 @@ let optimize g =
 let finish_global_provenance ~unreachable g =
   if not !global_provenance_recording then begin
     completed_global_provenance_rows := [];
+    completed_construction_temp_rows := [];
     global_provenance_tracking_ready := false
   end else begin
     let graph_nodes = NodeSet.of_list (nodesof g) in
@@ -1431,6 +1726,95 @@ let finish_global_provenance ~unreachable g =
                  else Global_chain_nodes retained })
       |> List.filter (fun row ->
              row.global_provenance_pretrim_nodes <> []);
+    let nodes_for_temp event =
+      Hashtbl.fold
+        (fun node events nodes ->
+           if NodeSet.mem node graph_nodes && List.mem event events then
+             node :: nodes
+           else nodes)
+        construction_temp_node_events []
+      |> List.sort_uniq compare_chain_node
+    in
+    let temporary_destination node =
+      let temporary_name lvalue =
+        match lvalue with
+        | Sparrow_cil.Var variable, Sparrow_cil.NoOffset
+          when String.length variable.Sparrow_cil.vname > 9
+               && String.sub variable.Sparrow_cil.vname 0 9 = "__cil_tmp" ->
+          Some variable.Sparrow_cil.vname
+        | _ -> None
+      in
+      match find_cmd node g with
+      | Cmd.Cset (lvalue, _, _) | Cmd.Cexternal (lvalue, _)
+      | Cmd.Calloc (lvalue, _, _, _) | Cmd.Csalloc (lvalue, _, _)
+      | Cmd.Cfalloc (lvalue, _, _) -> temporary_name lvalue
+      | Cmd.Ccall (Some lvalue, _, _, _) -> temporary_name lvalue
+      | Cmd.Cinstr _ | Cmd.Cif _ | Cmd.CLoop _ | Cmd.Cassume _
+      | Cmd.Ccall (None, _, _, _) | Cmd.Creturn _ | Cmd.Casm _
+      | Cmd.Cskip -> None
+    in
+    completed_construction_temp_rows :=
+      !pending_construction_temps
+      |> List.rev
+      |> List.map (fun pending ->
+             let mapped = nodes_for_temp pending.pending_temp_id in
+             let retained =
+               List.filter (fun node -> not (NodeSet.mem node unreachable))
+                 mapped
+             in
+             let survived =
+               retained |> List.filter_map temporary_destination
+               |> List.sort_uniq String.compare
+             in
+             let owner = pending.pending_temp_owner in
+             { construction_temp_owner_global_index =
+                 owner.temp_owner_global_index;
+               construction_temp_owner_chain_index =
+                 owner.temp_owner_chain_index;
+               construction_temp_owner_initializer_index =
+                 owner.temp_owner_initializer_index;
+               construction_temp_owner_name = owner.temp_owner_name;
+               construction_temp_owner_kind = owner.temp_owner_kind;
+               construction_temp_owner_location = owner.temp_owner_location;
+               construction_temp_initializer_or_type_path =
+                 pending.pending_temp_initializer_or_type_path;
+               construction_temp_expression_child_path =
+                 pending.pending_temp_expression_child_path;
+               construction_temp_generation_role =
+                 pending.pending_temp_generation_role;
+               construction_temp_type_preimage =
+                 pending.pending_temp_type_preimage;
+               construction_temp_payload_preimage =
+                 pending.pending_temp_payload_preimage;
+               construction_temp_final_name =
+                 (match survived with
+                  | [ name ] -> name
+                  | _ ->
+                    (match pending.pending_temp_varinfo with
+                     | Some variable -> variable.Sparrow_cil.vname
+                     | None -> pending.pending_temp_initial_name));
+               construction_temp_pretrim_nodes =
+                 List.sort_uniq compare_chain_node
+                   (pending.pending_temp_original_nodes @ mapped);
+               construction_temp_outcome =
+                 if retained = [] then Construction_temp_dropped
+                 else if List.length survived = 1 then
+                   Construction_temp_survives retained
+                 else Construction_temp_absorbed_by retained })
+      |> List.sort (fun left right ->
+             compare
+               (left.construction_temp_owner_global_index,
+                left.construction_temp_initializer_or_type_path,
+                string_of_construction_temp_generation_role
+                  left.construction_temp_generation_role,
+                left.construction_temp_expression_child_path,
+                left.construction_temp_final_name)
+               (right.construction_temp_owner_global_index,
+                right.construction_temp_initializer_or_type_path,
+                string_of_construction_temp_generation_role
+                  right.construction_temp_generation_role,
+                right.construction_temp_expression_child_path,
+                right.construction_temp_final_name));
     global_provenance_tracking_ready := false
   end
 
