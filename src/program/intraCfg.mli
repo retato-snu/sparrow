@@ -10,7 +10,8 @@
 (***********************************************************************)
 (** Intra-procedural CFG *)
 module Node : sig
-  include AbsDom.HASHABLE_SET
+  type t = ENTRY | EXIT | Node of int
+  include AbsDom.HASHABLE_SET with type t := t
   val entry : t
   val exit : t
   val id : t -> int
