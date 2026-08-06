@@ -16,6 +16,12 @@ val with_transfer_hook :
    (Dom.t * Global.t) option) ->
   (unit -> 'a) -> 'a
 
+val lookup : BasicDom.PowLoc.t -> ItvDom.Mem.t -> ItvDom.Val.t
+val eval_const : Sparrow_cil.constant -> ItvDom.Val.t
+val eval_uop : Spec.t -> Sparrow_cil.unop -> ItvDom.Val.t -> ItvDom.Val.t
+val eval_bop :
+  Spec.t -> Sparrow_cil.binop -> ItvDom.Val.t -> ItvDom.Val.t -> ItvDom.Val.t
+
 val eval_lv : ?spec:Spec.t -> BasicDom.Proc.t -> Sparrow_cil.lval -> ItvDom.Mem.t -> BasicDom.PowLoc.t
 val eval : ?spec:Spec.t -> BasicDom.Proc.t -> Sparrow_cil.exp -> ItvDom.Mem.t -> ItvDom.Val.t
 val eval_array_alloc : ?spec:Spec.t -> BasicDom.Node.t -> Sparrow_cil.exp -> bool -> Dom.t -> ItvDom.Val.t
