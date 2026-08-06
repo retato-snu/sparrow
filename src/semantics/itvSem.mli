@@ -17,6 +17,8 @@ val with_transfer_hook :
   (unit -> 'a) -> 'a
 
 val lookup : BasicDom.PowLoc.t -> ItvDom.Mem.t -> ItvDom.Val.t
+val can_strong_update :
+  AbsSem.update_mode -> Spec.t -> Global.t -> BasicDom.PowLoc.t -> bool
 val eval_const : Sparrow_cil.constant -> ItvDom.Val.t
 val eval_uop : Spec.t -> Sparrow_cil.unop -> ItvDom.Val.t -> ItvDom.Val.t
 val eval_bop :
