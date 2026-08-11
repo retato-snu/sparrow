@@ -30,3 +30,8 @@ val eval_array_alloc : ?spec:Spec.t -> BasicDom.Node.t -> Sparrow_cil.exp -> boo
 val eval_struct_alloc : BasicDom.PowLoc.t -> Sparrow_cil.compinfo -> ItvDom.Val.t
 val eval_string_alloc : BasicDom.Node.t -> string -> Dom.t -> ItvDom.Val.t
 val eval_string : string -> ItvDom.Val.t
+
+val sparrow_array_init :
+  AbsSem.update_mode -> Spec.t -> BasicDom.Node.t -> BasicDom.Proc.t ->
+  Sparrow_cil.exp list -> ItvDom.Mem.t * Global.t ->
+  ItvDom.Mem.t * Global.t
