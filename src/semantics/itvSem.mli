@@ -27,5 +27,6 @@ val eval_bop :
 val eval_lv : ?spec:Spec.t -> BasicDom.Proc.t -> Sparrow_cil.lval -> ItvDom.Mem.t -> BasicDom.PowLoc.t
 val eval : ?spec:Spec.t -> BasicDom.Proc.t -> Sparrow_cil.exp -> ItvDom.Mem.t -> ItvDom.Val.t
 val eval_array_alloc : ?spec:Spec.t -> BasicDom.Node.t -> Sparrow_cil.exp -> bool -> Dom.t -> ItvDom.Val.t
+val eval_struct_alloc : BasicDom.PowLoc.t -> Sparrow_cil.compinfo -> ItvDom.Val.t
 val eval_string_alloc : BasicDom.Node.t -> string -> Dom.t -> ItvDom.Val.t
 val eval_string : string -> ItvDom.Val.t
