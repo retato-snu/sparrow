@@ -39,6 +39,16 @@ sig
   val empty : t
   val is_empty : t -> bool
   val find : A.t -> t -> B.t
+  (** Return the comparison-equivalent key actually resident in the map,
+      together with its value.  Unlike [find], this preserves key
+      representatives when a client builds a restricted map from keys
+      decoded independently of the source map. *)
+  val find_binding : A.t -> t -> (A.t * B.t) option
+  (** Reinsert an already-resident binding without key or value
+      normalization.  This is the key-driven counterpart of [filter]: it is
+      intended only for rebuilding a restriction from [find_binding]
+      results. *)
+  val add_binding : A.t -> B.t -> t -> t
   val add : A.t -> B.t -> t -> t
   val weak_add : A.t -> B.t -> t -> t
   val remove : A.t -> t -> t

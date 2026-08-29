@@ -27,6 +27,8 @@ sig
   val empty : t
   val is_empty : t -> bool
   val find : A.t -> t -> B.t
+  val find_binding : A.t -> t -> (A.t * B.t) option
+  val add_binding : A.t -> B.t -> t -> t
   val add : A.t -> B.t -> t -> t
   val weak_add : A.t -> B.t -> t -> t
   val remove : A.t -> t -> t
@@ -215,6 +217,15 @@ struct
   let is_empty : t -> bool = BatMap.is_empty
 
   let find : A.t -> t -> B.t = fun k a -> try BatMap.find k a with _ -> B.bot
+
+  let find_binding : A.t -> t -> (A.t * B.t) option = fun k a ->
+    match BatMap.find_first_opt (fun candidate -> A.compare candidate k >= 0) a with
+    | Some (resident, value) when A.compare resident k = 0 ->
+      Some (resident, value)
+    | Some _ | None -> None
+
+  let add_binding : A.t -> B.t -> t -> t = fun k v x ->
+    if B.eq v B.bot then BatMap.remove k x else BatMap.add k v x
 
   let add : A.t -> B.t -> t -> t = fun k v x ->
     if B.eq v B.bot then BatMap.remove k x else BatMap.add k (b_hashcons v) x
@@ -407,6 +418,14 @@ struct
   let find k = function
     | V m -> MapCPO.find k m
     | Top -> raise (Failure "Error: find")
+
+  let find_binding k = function
+    | V m -> MapCPO.find_binding k m
+    | Top -> raise (Failure "Error: find_binding")
+
+  let add_binding k v = function
+    | V m -> V (MapCPO.add_binding k v m)
+    | Top -> top
 
   let add k v = function
     | V x -> V (MapCPO.add k v x)
